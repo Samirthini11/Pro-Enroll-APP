@@ -105,7 +105,10 @@ class LanguageRef {
   final String nativeLabel;
 }
 
+// English first for v1 (matches the default in LocaleNotifier). Tamil
+// stays available as a one-tap toggle and will be promoted to the
+// primary language once translations are reviewed by native speakers.
 const supportedLanguages = <LanguageRef>[
-  LanguageRef('ta', 'Tamil', 'தமிழ்'),
   LanguageRef('en', 'English', 'English'),
+  LanguageRef('ta', 'Tamil', 'தமிழ்'),
 ];

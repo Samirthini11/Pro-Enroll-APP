@@ -53,7 +53,7 @@ later swap the mock for a real backend client.
 
 | Flow                      | Screens included                                                     |
 | ------------------------- | -------------------------------------------------------------------- |
-| Splash & language pick    | `SplashScreen`, `LanguageSelectScreen` (Tamil / English)             |
+| Splash & language pick    | `SplashScreen`, `LanguageSelectScreen` (English first; Tamil available) |
 | Welcome                   | `WelcomeScreen` with value props (KYC, payouts, training)            |
 | Phone auth                | `PhoneInputScreen`, `OtpVerifyScreen` (6-digit OTP, demo: any code)  |
 | Onboarding                | Category multi-select, experience + name, city + work radius, visit fee |
@@ -69,8 +69,10 @@ schema in `docs/05-database-schema.md`.
 - **State management:** `flutter_riverpod` 2.x via plain
   `StateNotifierProvider` and `FutureProvider` — no codegen needed.
 - **Routing:** `go_router` 14.x. All routes live in `lib/routing/router.dart`.
-- **i18n:** lightweight in-app map under `lib/core/i18n.dart` (Tamil
-  + English). For production, switch to ARB + `flutter gen-l10n`.
+- **i18n:** lightweight in-app map under `lib/core/i18n.dart`.
+  **English is the v1 default**; Tamil is shipped as a one-tap toggle
+  and will be promoted to default once translations are reviewed by
+  native speakers. For production, migrate to ARB + `flutter gen-l10n`.
 - **Networking:** stubbed `MockRepository` in `lib/data/`. Replace with
   a Dio + retrofit client generated from the OpenAPI spec described in
   `docs/06-api-specification.md`.
