@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/i18n.dart';
+import '../../core/responsive.dart';
+import '../../core/theme.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../shared/widgets.dart';
@@ -32,45 +34,72 @@ class _VisitFeeScreenState extends ConsumerState<VisitFeeScreen> {
   @override
   Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
-    final c = Theme.of(context).colorScheme;
+    final amountSize = context.responsive<double>(xs: 44, sm: 52, md: 60);
+
     return AppPage(
       title: l.t('onboarding.fee.title'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView(
+        physics: const BouncingScrollPhysics(),
         children: [
-          const SizedBox(height: 4),
-          Text(l.t('onboarding.fee.helper'),
-              style: const TextStyle(color: Color(0xFF64748B))),
-          const SizedBox(height: 32),
+          Text(
+            l.t('onboarding.fee.helper'),
+            style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
+          ),
+          const SizedBox(height: 24),
           Center(
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 32, vertical: 24),
               decoration: BoxDecoration(
-                color: c.primaryContainer,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                gradient: const LinearGradient(
+                  colors: [
+                    AppTheme.brandPrimary,
+                    AppTheme.brandPrimaryDark,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.22),
+                    blurRadius: 22,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
               ),
               child: Column(
                 children: [
-                  const Text('Visit fee',
-                      style: TextStyle(color: Color(0xFF64748B))),
+                  Text(
+                    'Visit fee',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.86),
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     '₹$_fee',
                     style: TextStyle(
-                      fontSize: 56,
+                      fontSize: amountSize,
                       fontWeight: FontWeight.w800,
-                      color: c.primary,
+                      color: Colors.white,
+                      letterSpacing: -1,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 22),
           Row(
             children: [
               IconButton.filledTonal(
+                style: IconButton.styleFrom(
+                  minimumSize: const Size.square(44),
+                  shape: const CircleBorder(),
+                ),
                 onPressed: _fee <= 50 ? null : () => setState(() => _fee -= 25),
                 icon: const Icon(Icons.remove),
               ),
@@ -85,13 +114,18 @@ class _VisitFeeScreenState extends ConsumerState<VisitFeeScreen> {
                 ),
               ),
               IconButton.filledTonal(
-                onPressed: _fee >= 500 ? null : () => setState(() => _fee += 25),
+                style: IconButton.styleFrom(
+                  minimumSize: const Size.square(44),
+                  shape: const CircleBorder(),
+                ),
+                onPressed:
+                    _fee >= 500 ? null : () => setState(() => _fee += 25),
                 icon: const Icon(Icons.add),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          TrustBanner(
+          const TrustBanner(
             icon: Icons.info_outline,
             text:
                 'Customers see this fee before booking. Most pros in Pondy charge ₹100–₹250.',

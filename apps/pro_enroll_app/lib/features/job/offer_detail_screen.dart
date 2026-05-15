@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
 import '../../core/i18n.dart';
+import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
@@ -17,7 +18,8 @@ class OfferDetailScreen extends ConsumerStatefulWidget {
   final String? offerId;
 
   @override
-  ConsumerState<OfferDetailScreen> createState() => _OfferDetailScreenState();
+  ConsumerState<OfferDetailScreen> createState() =>
+      _OfferDetailScreenState();
 }
 
 class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
@@ -63,35 +65,55 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     if (offer == null) {
       return AppPage(
         title: l.t('offer.title'),
-        child: const Center(child: Text('This offer is no longer available.')),
+        child: const Center(
+          child: Text('This offer is no longer available.'),
+        ),
       );
     }
     final cat = supportedCategories.firstWhere(
       (c) => c.code == offer.categoryCode,
       orElse: () => supportedCategories.first,
     );
+    final progress = _remaining / 60;
+
     return AppPage(
       title: l.t('offer.title'),
       child: ListView(
+        physics: const BouncingScrollPhysics(),
         children: [
           // Timer banner.
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.amber.shade50,
-              borderRadius: BorderRadius.circular(12),
+              color: const Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(color: const Color(0xFFFDE68A)),
             ),
-            child: Row(
+            child: Column(
               children: [
-                const Icon(Icons.timer, color: Color(0xFFB45309)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    l.t('offer.timer', {'sec': '$_remaining'}),
-                    style: const TextStyle(
-                      color: Color(0xFFB45309),
-                      fontWeight: FontWeight.w700,
+                Row(
+                  children: [
+                    const Icon(Icons.timer, color: Color(0xFFB45309)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        l.t('offer.timer', {'sec': '$_remaining'}),
+                        style: const TextStyle(
+                          color: Color(0xFFB45309),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 6,
+                    backgroundColor: Colors.white,
+                    color: const Color(0xFFD97706),
                   ),
                 ),
               ],
@@ -110,37 +132,45 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primaryContainer,
+                          color: AppTheme.brandPrimaryLight,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(cat.icon,
-                            color: Theme.of(context).colorScheme.primary),
+                            color: AppTheme.brandPrimary),
                       ),
                       const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(cat.name(lang),
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 16)),
-                          Text(offer.code,
-                              style: const TextStyle(
-                                  color: Color(0xFF64748B), fontSize: 12)),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(cat.name(lang),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 16)),
+                            Text(offer.code,
+                                style: const TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 12)),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                   const Divider(height: 24),
-                  _row(Icons.report_problem_outlined, 'Problem', offer.problem),
-                  const SizedBox(height: 8),
+                  _row(Icons.report_problem_outlined, 'Problem',
+                      offer.problem, multi: true),
+                  const SizedBox(height: 10),
                   _row(Icons.person_outline, 'Customer', offer.customerName),
-                  const SizedBox(height: 8),
-                  _row(Icons.location_on_outlined, 'Area',
-                      '${offer.customerAreaName} (${offer.distanceKm.toStringAsFixed(1)} km)'),
-                  const SizedBox(height: 8),
-                  _row(Icons.schedule, 'Preferred time',
+                  const SizedBox(height: 10),
+                  _row(
+                    Icons.location_on_outlined,
+                    'Area',
+                    '${offer.customerAreaName} (${offer.distanceKm.toStringAsFixed(1)} km)',
+                  ),
+                  const SizedBox(height: 10),
+                  _row(Icons.schedule, 'Preferred',
                       _fmtTime(offer.preferredTime)),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   _row(Icons.currency_rupee, 'Visit fee',
                       formatPaise(offer.visitFeePaise)),
                 ],
@@ -149,52 +179,76 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
           ),
           const SizedBox(height: 16),
           const TrustBanner(
-            text:
-                'Customer pre-paid the visit fee. You will receive it via payout.',
+            tone: TrustBannerTone.success,
             icon: Icons.shield,
+            text: 'Customer pre-paid the visit fee. You get it via payout.',
           ),
         ],
       ),
-      bottom: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () {
-                ref.read(jobsProvider.notifier).reject(offer);
-                context.pop();
-              },
-              child: Text(l.t('offer.reject')),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: FilledButton(
-              onPressed: () {
-                ref.read(jobsProvider.notifier).accept(offer);
-                context.go(Routes.activeJob);
-              },
-              child: Text(l.t('offer.accept')),
-            ),
-          ),
-        ],
-      ),
+      bottom: LayoutBuilder(builder: (ctx, bc) {
+        final tight = bc.maxWidth < 320;
+        final reject = OutlinedButton(
+          onPressed: () {
+            ref.read(jobsProvider.notifier).reject(offer);
+            context.pop();
+          },
+          child: Text(l.t('offer.reject')),
+        );
+        final accept = FilledButton(
+          onPressed: () {
+            ref.read(jobsProvider.notifier).accept(offer);
+            context.go(Routes.activeJob);
+          },
+          child: Text(l.t('offer.accept')),
+        );
+        if (tight) {
+          return Column(
+            children: [
+              SizedBox(width: double.infinity, child: accept),
+              const SizedBox(height: 8),
+              SizedBox(width: double.infinity, child: reject),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: reject),
+            const SizedBox(width: 12),
+            Expanded(child: accept),
+          ],
+        );
+      }),
     );
   }
 
-  Widget _row(IconData icon, String label, String value) {
+  Widget _row(IconData icon, String label, String value,
+      {bool multi = false}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: const Color(0xFF64748B)),
-        const SizedBox(width: 8),
+        Icon(icon, size: 18, color: AppTheme.textMuted),
+        const SizedBox(width: 10),
         SizedBox(
-          width: 90,
-          child: Text(label,
-              style: const TextStyle(color: Color(0xFF64748B))),
+          width: 84,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
         Expanded(
-          child: Text(value,
-              style: const TextStyle(fontWeight: FontWeight.w600)),
+          child: Text(
+            value,
+            maxLines: multi ? 4 : 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
+          ),
         ),
       ],
     );

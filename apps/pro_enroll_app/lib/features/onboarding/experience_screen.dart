@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
 import '../../core/i18n.dart';
+import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
@@ -27,7 +28,8 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
     _nameCtrl = TextEditingController(
         text: ref.read(profileProvider).fullName ?? '');
     _years = {
-      for (final s in ref.read(profileProvider).skills) s.categoryCode: s.experienceYears,
+      for (final s in ref.read(profileProvider).skills)
+        s.categoryCode: s.experienceYears,
     };
   }
 
@@ -60,20 +62,45 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
     return AppPage(
       title: l.t('onboarding.experience.title'),
       child: ListView(
+        physics: const BouncingScrollPhysics(),
         children: [
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           TextField(
             controller: _nameCtrl,
             textCapitalization: TextCapitalization.words,
+            onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
               labelText: 'Full name',
+              hintText: 'Murugan S.',
               prefixIcon: Icon(Icons.person_outline),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 22),
+          const Text(
+            'Years of experience per skill',
+            style: TextStyle(
+              color: AppTheme.textSecondary,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 10),
           for (final s in profile.skills) ...[
-            _skillRow(context, lang, s),
-            const SizedBox(height: 16),
+            _SkillRow(
+              icon: supportedCategories
+                  .firstWhere((c) => c.code == s.categoryCode,
+                      orElse: () => supportedCategories.first)
+                  .icon,
+              label: supportedCategories
+                  .firstWhere((c) => c.code == s.categoryCode,
+                      orElse: () => supportedCategories.first)
+                  .name(lang),
+              years: _years[s.categoryCode] ?? 1,
+              onChange: (v) =>
+                  setState(() => _years[s.categoryCode] = v.clamp(0, 50)),
+            ),
+            const SizedBox(height: 10),
           ],
         ],
       ),
@@ -83,59 +110,116 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
       ),
     );
   }
+}
 
-  Widget _skillRow(BuildContext context, String lang, ProSkill skill) {
-    final cat = supportedCategories.firstWhere(
-      (c) => c.code == skill.categoryCode,
-      orElse: () => supportedCategories.first,
-    );
-    final yrs = _years[skill.categoryCode] ?? 1;
+class _SkillRow extends StatelessWidget {
+  const _SkillRow({
+    required this.icon,
+    required this.label,
+    required this.years,
+    required this.onChange,
+  });
+
+  final IconData icon;
+  final String label;
+  final int years;
+  final ValueChanged<int> onChange;
+
+  @override
+  Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
         child: Row(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
+                color: AppTheme.brandPrimaryLight,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(cat.icon,
-                  color: Theme.of(context).colorScheme.primary),
+              child: Icon(icon, color: AppTheme.brandPrimary, size: 22),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(cat.name(lang),
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
-                  Text('$yrs ${yrs == 1 ? 'year' : 'years'} experience',
-                      style: const TextStyle(color: Color(0xFF64748B))),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14.5),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$years ${years == 1 ? 'year' : 'years'} experience',
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 12.5,
+                    ),
+                  ),
                 ],
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline),
-              onPressed: yrs <= 0
-                  ? null
-                  : () => setState(() => _years[skill.categoryCode] = yrs - 1),
-            ),
-            Text('$yrs',
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w700)),
-            IconButton(
-              icon: const Icon(Icons.add_circle),
-              color: Theme.of(context).colorScheme.primary,
-              onPressed: yrs >= 50
-                  ? null
-                  : () => setState(() => _years[skill.categoryCode] = yrs + 1),
+            _Stepper(
+              value: years,
+              onChange: onChange,
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _Stepper extends StatelessWidget {
+  const _Stepper({required this.value, required this.onChange});
+
+  final int value;
+  final ValueChanged<int> onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            iconSize: 18,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            padding: EdgeInsets.zero,
+            onPressed: value <= 0 ? null : () => onChange(value - 1),
+            icon: const Icon(Icons.remove),
+            color: AppTheme.textSecondary,
+          ),
+          SizedBox(
+            width: 24,
+            child: Text(
+              '$value',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          IconButton(
+            iconSize: 18,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            padding: EdgeInsets.zero,
+            onPressed: value >= 50 ? null : () => onChange(value + 1),
+            icon: const Icon(Icons.add),
+            color: AppTheme.brandPrimary,
+          ),
+        ],
       ),
     );
   }

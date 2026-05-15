@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
 import '../../core/i18n.dart';
+import '../../core/responsive.dart';
+import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
@@ -39,134 +41,207 @@ class _JobsTabState extends ConsumerState<JobsTab> {
     final lang = ref.watch(localeProvider).languageCode;
     final profile = ref.watch(profileProvider);
     final jobs = ref.watch(jobsProvider);
-    final theme = Theme.of(context);
 
     return RefreshIndicator(
       onRefresh: _refresh,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-        children: [
-          // Header.
-          Row(
+      child: ContentMaxWidth(
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+              context.pageHPadding, 16, context.pageHPadding, 28),
+          physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics()),
+          children: [
+            _Header(profile: profile, title: l.t('jobs.title')),
+            const SizedBox(height: 16),
+            _AvailabilityCard(
+              available: profile.isAvailable,
+              label: l.t('jobs.available_toggle'),
+              onLabel: l.t('common.online'),
+              offLabel: l.t('common.offline'),
+              onChanged: (v) {
+                ref.read(profileProvider.notifier).setAvailability(v);
+                if (v) _refresh();
+              },
+            ),
+            const SizedBox(height: 20),
+            if (jobs.activeJob != null) ...[
+              _ActiveJobCard(job: jobs.activeJob!),
+              const SizedBox(height: 24),
+            ],
+            Row(
+              children: [
+                Text('Open offers',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                if (profile.isAvailable && jobs.offers.isNotEmpty)
+                  StatusPill(
+                    label: '${jobs.offers.length} new',
+                    color: AppTheme.brandAccent,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (!profile.isAvailable)
+              EmptyState(
+                icon: Icons.bedtime_outlined,
+                title: 'You are offline',
+                body: 'Turn on availability above to start receiving jobs.',
+              )
+            else if (jobs.loading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (jobs.offers.isEmpty)
+              EmptyState(
+                icon: Icons.hourglass_empty,
+                title: l.t('jobs.empty.title'),
+                body: l.t('jobs.empty.body'),
+              )
+            else
+              for (final o in jobs.offers) ...[
+                _OfferCard(offer: o, lang: lang),
+                const SizedBox(height: 12),
+              ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({required this.profile, required this.title});
+  final dynamic profile;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Hi, ${profile.fullName ?? 'Pro'} 👋',
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(l.t('jobs.title'),
-                        style: const TextStyle(color: Color(0xFF64748B))),
-                  ],
-                ),
+              Text(
+                'Hi, ${profile.fullName ?? 'Pro'} 👋',
+                style: Theme.of(context).textTheme.titleLarge,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: theme.colorScheme.primaryContainer,
-                child: Text(
-                  (profile.fullName ?? 'P').characters.first.toUpperCase(),
-                  style: TextStyle(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w700),
-                ),
-              ),
+              const SizedBox(height: 2),
+              Text(title, style: const TextStyle(color: AppTheme.textMuted)),
             ],
           ),
-          const SizedBox(height: 16),
-
-          // Availability card.
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: profile.isAvailable
-                  ? theme.colorScheme.primaryContainer
-                  : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: profile.isAvailable
-                    ? theme.colorScheme.primary
-                    : const Color(0xFFE2E8F0),
-              ),
+        ),
+        CircleAvatar(
+          radius: 22,
+          backgroundColor: AppTheme.brandPrimaryLight,
+          child: Text(
+            (profile.fullName ?? 'P').characters.first.toUpperCase(),
+            style: const TextStyle(
+              color: AppTheme.brandPrimaryDark,
+              fontWeight: FontWeight.w800,
             ),
-            child: Row(
-              children: [
-                Icon(
-                  profile.isAvailable ? Icons.flash_on : Icons.flash_off,
-                  color: profile.isAvailable
-                      ? theme.colorScheme.primary
-                      : const Color(0xFF64748B),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AvailabilityCard extends StatelessWidget {
+  const _AvailabilityCard({
+    required this.available,
+    required this.label,
+    required this.onLabel,
+    required this.offLabel,
+    required this.onChanged,
+  });
+  final bool available;
+  final String label;
+  final String onLabel;
+  final String offLabel;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        gradient: available
+            ? const LinearGradient(
+                colors: [AppTheme.brandPrimary, AppTheme.brandPrimaryDark],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : null,
+        color: available ? null : Colors.white,
+        border: Border.all(
+          color: available ? Colors.transparent : AppTheme.border,
+        ),
+        boxShadow: available
+            ? [
+                BoxShadow(
+                  color: AppTheme.brandPrimary.withValues(alpha: 0.25),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(l.t('jobs.available_toggle'),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w700, fontSize: 15)),
-                      Text(
-                        profile.isAvailable
-                            ? l.t('common.online')
-                            : l.t('common.offline'),
-                        style: TextStyle(
-                          color: profile.isAvailable
-                              ? theme.colorScheme.primary
-                              : const Color(0xFF64748B),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+              ]
+            : null,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: available
+                  ? Colors.white.withValues(alpha: 0.18)
+                  : AppTheme.brandPrimaryLight,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              available ? Icons.flash_on : Icons.flash_off,
+              color: available ? Colors.white : AppTheme.brandPrimary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14.5,
+                    color: available ? Colors.white : AppTheme.textPrimary,
                   ),
                 ),
-                Switch(
-                  value: profile.isAvailable,
-                  onChanged: (v) {
-                    ref.read(profileProvider.notifier).setAvailability(v);
-                    if (v) _refresh();
-                  },
+                Text(
+                  available ? onLabel : offLabel,
+                  style: TextStyle(
+                    color: available
+                        ? Colors.white.withValues(alpha: 0.88)
+                        : AppTheme.textMuted,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
-
-          // Active job (if any).
-          if (jobs.activeJob != null) ...[
-            _ActiveJobCard(job: jobs.activeJob!),
-            const SizedBox(height: 24),
-          ],
-
-          // Offers.
-          Text('Open offers',
-              style: theme.textTheme.titleMedium),
-          const SizedBox(height: 12),
-
-          if (!profile.isAvailable)
-            _EmptyState(
-              icon: Icons.bedtime_outlined,
-              title: 'You are offline',
-              body:
-                  'Turn on availability above to start receiving jobs.',
-            )
-          else if (jobs.loading)
-            const Center(child: Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
-            ))
-          else if (jobs.offers.isEmpty)
-            _EmptyState(
-              icon: Icons.hourglass_empty,
-              title: l.t('jobs.empty.title'),
-              body: l.t('jobs.empty.body'),
-            )
-          else
-            for (final o in jobs.offers) ...[
-              _OfferCard(offer: o, lang: lang),
-              const SizedBox(height: 12),
-            ],
+          Switch(
+            value: available,
+            onChanged: onChanged,
+            activeThumbColor: Colors.white,
+            activeTrackColor: Colors.white.withValues(alpha: 0.35),
+          ),
         ],
       ),
     );
@@ -187,7 +262,6 @@ class _OfferCard extends ConsumerWidget {
     );
     return Card(
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: () => context.push(Routes.offer, extra: offer.id),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -200,87 +274,98 @@ class _OfferCard extends ConsumerWidget {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer,
+                      color: AppTheme.brandPrimaryLight,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(cat.icon,
-                        color: Theme.of(context).colorScheme.primary),
+                        color: AppTheme.brandPrimary, size: 22),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       cat.name(lang),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                           fontWeight: FontWeight.w700, fontSize: 16),
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '${offer.distanceKm.toStringAsFixed(1)} km',
-                      style: const TextStyle(
-                          color: Color(0xFFB45309),
-                          fontWeight: FontWeight.w700),
-                    ),
+                  StatusPill(
+                    label: '${offer.distanceKm.toStringAsFixed(1)} km',
+                    color: AppTheme.brandAccent,
+                    icon: Icons.location_on,
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              Text(offer.problem,
-                  style: const TextStyle(fontSize: 14)),
+              Text(
+                offer.problem,
+                style: const TextStyle(fontSize: 14, height: 1.4),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
               const SizedBox(height: 10),
               Row(
                 children: [
                   const Icon(Icons.location_on_outlined,
-                      size: 16, color: Color(0xFF64748B)),
+                      size: 16, color: AppTheme.textMuted),
                   const SizedBox(width: 4),
                   Expanded(
-                    child: Text(offer.customerAreaName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Color(0xFF64748B))),
+                    child: Text(
+                      offer.customerAreaName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppTheme.textMuted),
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
                     'Fee ${formatPaise(offer.visitFeePaise)}',
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      color: AppTheme.brandPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () =>
-                          ref.read(jobsProvider.notifier).reject(offer),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(44),
-                      ),
-                      child: Text(l.t('offer.reject')),
-                    ),
+              LayoutBuilder(builder: (ctx, bc) {
+                final tight = bc.maxWidth < 280;
+                final reject = OutlinedButton(
+                  onPressed: () =>
+                      ref.read(jobsProvider.notifier).reject(offer),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () {
-                        ref.read(jobsProvider.notifier).accept(offer);
-                        context.push(Routes.activeJob);
-                      },
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(44),
-                      ),
-                      child: Text(l.t('offer.accept')),
-                    ),
+                  child: Text(l.t('offer.reject')),
+                );
+                final accept = FilledButton(
+                  onPressed: () {
+                    ref.read(jobsProvider.notifier).accept(offer);
+                    context.push(Routes.activeJob);
+                  },
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
                   ),
-                ],
-              ),
+                  child: Text(l.t('offer.accept')),
+                );
+                if (tight) {
+                  return Column(
+                    children: [
+                      SizedBox(width: double.infinity, child: accept),
+                      const SizedBox(height: 8),
+                      SizedBox(width: double.infinity, child: reject),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: reject),
+                    const SizedBox(width: 10),
+                    Expanded(child: accept),
+                  ],
+                );
+              }),
             ],
           ),
         ),
@@ -295,35 +380,56 @@ class _ActiveJobCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     return Card(
-      color: theme.colorScheme.primary,
+      color: AppTheme.brandPrimary,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        side: BorderSide.none,
+      ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: () => context.push(Routes.activeJob),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.flag, color: Colors.white),
-                  SizedBox(width: 8),
-                  Text('Active job',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      )),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.flag, size: 14, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text('Active job',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right, color: Colors.white),
                 ],
               ),
               const SizedBox(height: 10),
               Text(
                 job.problem,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                  height: 1.3,
+                ),
               ),
               const SizedBox(height: 10),
               Row(
@@ -331,47 +437,24 @@ class _ActiveJobCard extends ConsumerWidget {
                   const Icon(Icons.person_outline,
                       color: Colors.white70, size: 18),
                   const SizedBox(width: 4),
-                  Text(job.customerName,
+                  Expanded(
+                    child: Text(
+                      job.customerName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                  const Icon(Icons.location_on_outlined,
+                      color: Colors.white70, size: 16),
+                  const SizedBox(width: 2),
+                  Text('${job.distanceKm.toStringAsFixed(1)} km',
                       style: const TextStyle(color: Colors.white70)),
-                  const Spacer(),
-                  const Icon(Icons.chevron_right, color: Colors.white),
                 ],
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.icon, required this.title, required this.body});
-  final IconData icon;
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, size: 48, color: const Color(0xFF94A3B8)),
-          const SizedBox(height: 12),
-          Text(title,
-              style:
-                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 6),
-          Text(body,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF64748B))),
-        ],
       ),
     );
   }

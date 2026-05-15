@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
 import '../../core/i18n.dart';
+import '../../core/responsive.dart';
+import '../../core/theme.dart';
+import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../../state/locale_state.dart';
-import '../../data/models.dart';
 import '../shared/widgets.dart';
 
 class CategorySelectScreen extends ConsumerStatefulWidget {
@@ -48,101 +50,159 @@ class _CategorySelectScreenState extends ConsumerState<CategorySelectScreen> {
   Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
     final lang = ref.watch(localeProvider).languageCode;
+    final cols = context.gridColumns;
+    final tileAspect = context.responsive<double>(xs: 0.95, sm: 1.0, md: 1.05);
 
     return AppPage(
       title: l.t('onboarding.category.title'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 4),
-          Text(l.t('onboarding.category.helper'),
-              style: const TextStyle(color: Color(0xFF64748B))),
-          const SizedBox(height: 16),
+          Text(
+            l.t('onboarding.category.helper'),
+            style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
+          ),
+          const SizedBox(height: 14),
           Expanded(
             child: GridView.builder(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.zero,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: cols,
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                childAspectRatio: 1.1,
+                childAspectRatio: tileAspect,
               ),
               itemCount: supportedCategories.length,
               itemBuilder: (ctx, i) {
                 final c = supportedCategories[i];
                 final selected = _selected.contains(c.code);
-                return InkWell(
-                  borderRadius: BorderRadius.circular(16),
+                return _CategoryTile(
+                  icon: c.icon,
+                  label: c.name(lang),
+                  feeText: '₹${c.defaultVisitFee} visit',
+                  selected: selected,
                   onTap: () => _toggle(c.code),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: selected
-                            ? Theme.of(context).colorScheme.primary
-                            : const Color(0xFFE2E8F0),
-                        width: selected ? 2 : 1,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primaryContainer,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(c.icon,
-                              color: Theme.of(context).colorScheme.primary),
-                        ),
-                        Text(
-                          c.name(lang),
-                          style: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w700),
-                        ),
-                        Row(
-                          children: [
-                            Icon(
-                              selected
-                                  ? Icons.check_circle
-                                  : Icons.circle_outlined,
-                              size: 18,
-                              color: selected
-                                  ? Theme.of(context).colorScheme.primary
-                                  : const Color(0xFF94A3B8),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '₹${c.defaultVisitFee} visit',
-                              style: const TextStyle(
-                                  color: Color(0xFF64748B), fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
                 );
               },
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            '${_selected.length} / $_maxSelect',
-            style: const TextStyle(
-                fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(Icons.check_circle,
+                  size: 18,
+                  color: _selected.isEmpty
+                      ? AppTheme.textFaint
+                      : AppTheme.brandPrimary),
+              const SizedBox(width: 6),
+              Text(
+                '${_selected.length} of $_maxSelect selected',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ],
           ),
         ],
       ),
       bottom: FilledButton(
         onPressed: _selected.isEmpty ? null : _continue,
         child: Text(l.t('common.next')),
+      ),
+    );
+  }
+}
+
+class _CategoryTile extends StatelessWidget {
+  const _CategoryTile({
+    required this.icon,
+    required this.label,
+    required this.feeText,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String feeText;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppTheme.brandPrimaryLight : Colors.white,
+      borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+            border: Border.all(
+              color: selected ? AppTheme.brandPrimary : AppTheme.border,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? Colors.white
+                          : AppTheme.brandPrimaryLight,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, color: AppTheme.brandPrimary, size: 22),
+                  ),
+                  Icon(
+                    selected
+                        ? Icons.check_circle
+                        : Icons.circle_outlined,
+                    size: 20,
+                    color: selected
+                        ? AppTheme.brandPrimary
+                        : AppTheme.textFaint,
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    feeText,
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

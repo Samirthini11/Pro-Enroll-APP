@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/i18n.dart';
+import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
@@ -31,12 +32,14 @@ class _AadhaarScreenState extends ConsumerState<AadhaarScreen> {
     super.dispose();
   }
 
+  String get _digits => _aadhaarCtrl.text.replaceAll(' ', '');
+
   Future<void> _sendOtp() async {
     setState(() {
       _busy = true;
       _error = null;
     });
-    final last4 = _aadhaarCtrl.text.trim().substring(8);
+    final last4 = _digits.substring(8);
     final ref0 = await ref.read(repositoryProvider).initiateAadhaar(last4);
     if (!mounted) return;
     setState(() {
@@ -61,9 +64,10 @@ class _AadhaarScreenState extends ConsumerState<AadhaarScreen> {
       setState(() => _error = 'Invalid Aadhaar OTP.');
       return;
     }
-    final last4 = _aadhaarCtrl.text.trim().substring(8);
-    ref.read(profileProvider.notifier).setKyc(KycStatus.selfiePending,
-        aadhaarLast4: last4);
+    final last4 = _digits.substring(8);
+    ref
+        .read(profileProvider.notifier)
+        .setKyc(KycStatus.selfiePending, aadhaarLast4: last4);
     if (!mounted) return;
     context.push(Routes.kycSelfie);
   }
@@ -71,25 +75,30 @@ class _AadhaarScreenState extends ConsumerState<AadhaarScreen> {
   @override
   Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
-    final valid = _aadhaarCtrl.text.trim().length == 12;
+    final valid = _digits.length == 12;
     return AppPage(
       title: l.t('kyc.aadhaar.title'),
       child: ListView(
+        physics: const BouncingScrollPhysics(),
         children: [
-          Text(l.t('kyc.aadhaar.helper'),
-              style: const TextStyle(color: Color(0xFF64748B))),
-          const SizedBox(height: 24),
+          Text(
+            l.t('kyc.aadhaar.helper'),
+            style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
+          ),
+          const SizedBox(height: 22),
           TextField(
             controller: _aadhaarCtrl,
             enabled: !_otpStage,
             keyboardType: TextInputType.number,
             inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(12),
+              _AadhaarFormatter(),
             ],
             onChanged: (_) => setState(() {}),
             style: const TextStyle(
-                fontSize: 22, fontWeight: FontWeight.w600, letterSpacing: 4),
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.5,
+            ),
             decoration: const InputDecoration(
               labelText: 'Aadhaar number',
               hintText: 'xxxx xxxx xxxx',
@@ -97,10 +106,11 @@ class _AadhaarScreenState extends ConsumerState<AadhaarScreen> {
             ),
           ),
           if (_otpStage) ...[
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             TextField(
               controller: _otpCtrl,
               keyboardType: TextInputType.number,
+              autofocus: true,
               textAlign: TextAlign.center,
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
@@ -108,16 +118,28 @@ class _AadhaarScreenState extends ConsumerState<AadhaarScreen> {
               ],
               onChanged: (_) => setState(() => _error = null),
               style: const TextStyle(
-                  fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.w700),
+                fontSize: 26,
+                letterSpacing: 8,
+                fontWeight: FontWeight.w800,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Aadhaar OTP',
-                hintText: '••••••',
+                hintText: '• • • • • •',
               ),
             ),
             if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!,
-                  style: const TextStyle(color: Colors.redAccent)),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(Icons.error_outline,
+                      size: 16, color: AppTheme.brandDanger),
+                  const SizedBox(width: 6),
+                  Text(_error!,
+                      style: const TextStyle(
+                          color: AppTheme.brandDanger,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
             ],
           ],
         ],
@@ -136,6 +158,27 @@ class _AadhaarScreenState extends ConsumerState<AadhaarScreen> {
                     strokeWidth: 2.5, color: Colors.white))
             : Text(_otpStage ? l.t('common.submit') : 'Send Aadhaar OTP'),
       ),
+    );
+  }
+}
+
+/// Strips non-digits, caps at 12 digits, and inserts a space after every
+/// 4 digits ("1234 5678 9012") while keeping the caret at the end.
+class _AadhaarFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    var digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 12) digits = digits.substring(0, 12);
+    final buf = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i != 0 && i % 4 == 0) buf.write(' ');
+      buf.write(digits[i]);
+    }
+    final formatted = buf.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

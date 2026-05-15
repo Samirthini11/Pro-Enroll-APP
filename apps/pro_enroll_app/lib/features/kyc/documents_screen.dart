@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/i18n.dart';
+import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
@@ -39,15 +40,21 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
     return AppPage(
       title: l.t('kyc.docs.title'),
       child: ListView(
+        physics: const BouncingScrollPhysics(),
         children: [
-          Text(l.t('kyc.docs.body'),
-              style: const TextStyle(color: Color(0xFF64748B))),
+          Text(
+            l.t('kyc.docs.body'),
+            style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
+          ),
           const SizedBox(height: 20),
-          _docRow('tools', Icons.handyman, 'Tools / shop photo'),
+          _docRow(context, 'tools', Icons.handyman, 'Tools / shop photo',
+              'Helps build trust with new customers.'),
           const SizedBox(height: 10),
-          _docRow('cert', Icons.school_outlined, 'Skill / training certificate'),
+          _docRow(context, 'cert', Icons.school_outlined,
+              'Skill / training certificate', 'Increases your Pro Score.'),
           const SizedBox(height: 10),
-          _docRow('pan', Icons.badge_outlined, 'PAN card'),
+          _docRow(context, 'pan', Icons.badge_outlined, 'PAN card',
+              'Required for higher monthly payouts.'),
         ],
       ),
       bottom: FilledButton(
@@ -57,18 +64,18 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
     );
   }
 
-  Widget _docRow(String key, IconData icon, String title) {
+  Widget _docRow(
+      BuildContext context, String key, IconData icon, String title, String body) {
     final uploaded = _uploaded.contains(key);
     return InfoCard(
       icon: icon,
       title: title,
-      subtitle: uploaded ? 'Uploaded — tap to remove' : 'Tap to upload',
+      subtitle: uploaded ? 'Uploaded — tap to remove' : body,
       onTap: () => _toggle(key),
       trailing: Icon(
         uploaded ? Icons.check_circle : Icons.add_circle_outline,
-        color: uploaded
-            ? Theme.of(context).colorScheme.primary
-            : const Color(0xFF94A3B8),
+        color:
+            uploaded ? AppTheme.brandSuccess : AppTheme.brandPrimary,
       ),
     );
   }

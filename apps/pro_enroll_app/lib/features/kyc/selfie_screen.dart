@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/i18n.dart';
+import '../../core/responsive.dart';
+import '../../core/theme.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../shared/widgets.dart';
@@ -35,27 +37,43 @@ class _SelfieScreenState extends ConsumerState<SelfieScreen> {
   @override
   Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
+    // Make the selfie circle responsive — never larger than the
+    // smaller of (300, 60% of viewport width / 45% of viewport height).
+    final cap = (context.screenW * 0.6).clamp(180.0, 300.0);
+    final capH = (context.screenH * 0.42).clamp(180.0, 320.0);
+    final circle = cap < capH ? cap : capH;
+
     return AppPage(
       title: l.t('kyc.selfie.title'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView(
+        physics: const BouncingScrollPhysics(),
         children: [
-          Text(l.t('kyc.selfie.body'),
-              style: const TextStyle(color: Color(0xFF64748B))),
-          const SizedBox(height: 24),
+          Text(
+            l.t('kyc.selfie.body'),
+            style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
+          ),
+          const SizedBox(height: 22),
           Center(
-            child: Container(
-              width: 220,
-              height: 280,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 240),
+              width: circle,
+              height: circle * 1.1,
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(140),
+                borderRadius: BorderRadius.circular(circle),
                 border: Border.all(
                   color: _matchScore != null
-                      ? Colors.green
-                      : const Color(0xFFE2E8F0),
+                      ? AppTheme.brandSuccess
+                      : AppTheme.border,
                   width: 3,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
               child: _busy
                   ? const Center(child: CircularProgressIndicator())
@@ -63,33 +81,42 @@ class _SelfieScreenState extends ConsumerState<SelfieScreen> {
                       _matchScore != null
                           ? Icons.check_circle
                           : Icons.face_outlined,
-                      size: 120,
+                      size: circle * 0.55,
                       color: _matchScore != null
-                          ? Colors.green
-                          : const Color(0xFF94A3B8),
+                          ? AppTheme.brandSuccess
+                          : AppTheme.textFaint,
                     ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           if (_matchScore != null)
             Center(
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(20),
+                  color: const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFA7F3D0)),
                 ),
-                child: Text(
-                  'Face matched (${(_matchScore! * 100).toStringAsFixed(0)}%)',
-                  style: const TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.w700,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.verified,
+                        size: 16, color: AppTheme.brandSuccess),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Face matched (${(_matchScore! * 100).toStringAsFixed(0)}%)',
+                      style: const TextStyle(
+                        color: AppTheme.brandSuccess,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          const Spacer(),
+          const SizedBox(height: 18),
           if (_matchScore == null)
             OutlinedButton.icon(
               onPressed: _busy ? null : _capture,

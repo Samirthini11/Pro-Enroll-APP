@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/i18n.dart';
+import '../../core/theme.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../shared/widgets.dart';
@@ -46,16 +47,19 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
     final phone = ref.watch(authProvider).phoneE164 ?? '';
     return AppPage(
       title: l.t('auth.otp.title'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView(
+        physics: const BouncingScrollPhysics(),
         children: [
-          const SizedBox(height: 8),
-          Text(l.t('auth.otp.helper', {'phone': phone}),
-              style: const TextStyle(color: Color(0xFF64748B))),
+          const SizedBox(height: 4),
+          Text(
+            l.t('auth.otp.helper', {'phone': phone}),
+            style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
+          ),
           const SizedBox(height: 24),
           TextField(
             controller: _controller,
             keyboardType: TextInputType.number,
+            autofocus: true,
             textAlign: TextAlign.center,
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
@@ -63,24 +67,42 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
             ],
             onChanged: (_) => setState(() => _error = null),
             style: const TextStyle(
-                fontSize: 28, letterSpacing: 12, fontWeight: FontWeight.w700),
-            decoration: const InputDecoration(hintText: '••••••'),
+              fontSize: 28,
+              letterSpacing: 10,
+              fontWeight: FontWeight.w800,
+            ),
+            decoration: const InputDecoration(hintText: '• • • • • •'),
           ),
           if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!,
-                style: const TextStyle(
-                    color: Colors.redAccent, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.error_outline,
+                    size: 16, color: AppTheme.brandDanger),
+                const SizedBox(width: 6),
+                Text(_error!,
+                    style: const TextStyle(
+                      color: AppTheme.brandDanger,
+                      fontWeight: FontWeight.w600,
+                    )),
+              ],
+            ),
           ],
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: _busy ? null : () {
-              ref.read(authProvider.notifier).startPhone(phone);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(l.t('auth.otp.resend'))),
-              );
-            },
-            child: Text(l.t('auth.otp.resend')),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      ref.read(authProvider.notifier).startPhone(phone);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(l.t('auth.otp.resend'))),
+                      );
+                    },
+              icon: const Icon(Icons.refresh, size: 18),
+              label: Text(l.t('auth.otp.resend')),
+            ),
           ),
         ],
       ),
@@ -91,7 +113,10 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
                 height: 22,
                 width: 22,
                 child: CircularProgressIndicator(
-                    strokeWidth: 2.5, color: Colors.white))
+                  strokeWidth: 2.5,
+                  color: Colors.white,
+                ),
+              )
             : Text(l.t('common.submit')),
       ),
     );
