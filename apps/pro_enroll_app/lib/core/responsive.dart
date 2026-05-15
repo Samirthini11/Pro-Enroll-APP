@@ -104,7 +104,11 @@ extension ResponsiveContext on BuildContext {
 /// Constrains a child to [BuildContext.contentMaxWidth] and centers it.
 ///
 /// Use for forms and onboarding flows so the UI doesn't stretch
-/// uncomfortably wide on foldables or in the browser.
+/// uncomfortably wide on foldables or in the browser. On narrow phone
+/// viewports this is a no-op so that descendant widgets like
+/// [ListView] still receive a finite height from the parent (a plain
+/// `Center` gives them loose vertical constraints, which collapses the
+/// list to zero height).
 class ContentMaxWidth extends StatelessWidget {
   const ContentMaxWidth({
     super.key,
@@ -117,13 +121,21 @@ class ContentMaxWidth extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: maxWidth ?? context.contentMaxWidth,
-        ),
-        child: child,
-      ),
+    final cap = maxWidth ?? context.contentMaxWidth;
+    if (context.screenW <= cap) return child;
+    return LayoutBuilder(
+      builder: (ctx, bc) {
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: cap,
+              minHeight: bc.hasBoundedHeight ? bc.maxHeight : 0,
+            ),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

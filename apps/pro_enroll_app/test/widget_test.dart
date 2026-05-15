@@ -16,6 +16,6 @@ void main() {
     await tester.pumpAndSettle(const Duration(seconds: 2));
 
     expect(find.byType(MaterialApp), findsOneWidget);
-    expect(find.text('Pro-Enroll'), findsWidgets);
+    expect(find.textContaining('Pro-Enroll'), findsWidgets);
   });
 }

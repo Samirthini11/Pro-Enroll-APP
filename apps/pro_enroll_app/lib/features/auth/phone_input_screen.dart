@@ -8,9 +8,12 @@ import '../../core/theme.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../shared/widgets.dart';
+import 'auth_flow.dart';
 
 class PhoneInputScreen extends ConsumerStatefulWidget {
-  const PhoneInputScreen({super.key});
+  const PhoneInputScreen({super.key, this.flow = const AuthFlow(mode: AuthMode.signUp)});
+
+  final AuthFlow flow;
 
   @override
   ConsumerState<PhoneInputScreen> createState() => _PhoneInputScreenState();
@@ -36,20 +39,27 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
     ref.read(profileProvider.notifier).setPhone(phone);
     if (!mounted) return;
     setState(() => _busy = false);
-    context.push(Routes.otp);
+    context.push(Routes.otp, extra: widget.flow);
   }
 
   @override
   Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
+    final isSignIn = widget.flow.isSignIn;
+    final title = isSignIn ? 'Sign in' : 'Create your account';
+    final helper = isSignIn
+        ? 'Enter the mobile number you used while enrolling. '
+            'We will send a 6-digit OTP via SMS.'
+        : 'Enter the mobile number we should reach you on. '
+            'We will send a 6-digit OTP via SMS.';
     return AppPage(
-      title: l.t('auth.phone.title'),
+      title: title,
       child: ListView(
         physics: const BouncingScrollPhysics(),
         children: [
           const SizedBox(height: 4),
           Text(
-            l.t('auth.phone.helper'),
+            helper,
             style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
           ),
           const SizedBox(height: 24),
@@ -67,40 +77,32 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
               fontWeight: FontWeight.w700,
               letterSpacing: 0.5,
             ),
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               prefixIcon: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppTheme.brandPrimaryLight,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        '+91',
-                        style: TextStyle(
-                          color: AppTheme.brandPrimaryDark,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                padding: EdgeInsets.symmetric(horizontal: 14),
+                child: _CountryPrefix(),
               ),
               prefixIconConstraints:
-                  const BoxConstraints(minWidth: 80, minHeight: 0),
+                  BoxConstraints(minWidth: 80, minHeight: 0),
               hintText: '98xxxxxxxx',
             ),
           ),
           const SizedBox(height: 16),
           const TrustBanner(
             icon: Icons.shield_outlined,
-            text: 'Verified pros only. We use OTP, never store your password.',
+            text:
+                'Verified pros only. We use OTP, never store your password.',
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              isSignIn
+                  ? "New here? Tap back and choose 'Create account'."
+                  : 'By creating an account you agree to our Terms & Privacy Policy.',
+              style:
+                  const TextStyle(color: AppTheme.textMuted, fontSize: 12.5),
+            ),
           ),
         ],
       ),
@@ -111,12 +113,38 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
                 height: 22,
                 width: 22,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: Colors.white,
-                ),
+                    strokeWidth: 2.5, color: Colors.white),
               )
-            : Text(l.t('common.continue')),
+            : Text(isSignIn ? 'Send OTP' : l.t('common.continue')),
       ),
+    );
+  }
+}
+
+class _CountryPrefix extends StatelessWidget {
+  const _CountryPrefix();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppTheme.brandPrimaryLight,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Text(
+            '+91',
+            style: TextStyle(
+              color: AppTheme.brandPrimaryDark,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

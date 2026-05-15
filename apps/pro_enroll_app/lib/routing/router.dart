@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/auth/auth_flow.dart';
+import '../features/auth/auth_landing_screen.dart';
 import '../features/auth/otp_verify_screen.dart';
 import '../features/auth/phone_input_screen.dart';
 import '../features/home/home_shell.dart';
@@ -14,15 +16,13 @@ import '../features/kyc/selfie_screen.dart';
 import '../features/onboarding/category_select_screen.dart';
 import '../features/onboarding/experience_screen.dart';
 import '../features/onboarding/home_location_screen.dart';
-import '../features/onboarding/language_select_screen.dart';
 import '../features/onboarding/visit_fee_screen.dart';
-import '../features/onboarding/welcome_screen.dart';
 import '../features/splash/splash_screen.dart';
 
+/// Centralised list of route paths so screens never hard-code strings.
 class Routes {
   static const splash = '/';
-  static const language = '/language';
-  static const welcome = '/welcome';
+  static const authLanding = '/auth/landing';
   static const phone = '/auth/phone';
   static const otp = '/auth/otp';
 
@@ -46,44 +46,78 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: Routes.splash,
     routes: [
-      GoRoute(path: Routes.splash, builder: (_, __) => const SplashScreen()),
       GoRoute(
-          path: Routes.language,
-          builder: (_, __) => const LanguageSelectScreen()),
-      GoRoute(path: Routes.welcome, builder: (_, __) => const WelcomeScreen()),
-      GoRoute(path: Routes.phone, builder: (_, __) => const PhoneInputScreen()),
-      GoRoute(path: Routes.otp, builder: (_, __) => const OtpVerifyScreen()),
+        path: Routes.splash,
+        builder: (_, __) => const SplashScreen(),
+      ),
       GoRoute(
-          path: Routes.onboardCategory,
-          builder: (_, __) => const CategorySelectScreen()),
+        path: Routes.authLanding,
+        builder: (_, __) => const AuthLandingScreen(),
+      ),
       GoRoute(
-          path: Routes.onboardExperience,
-          builder: (_, __) => const ExperienceScreen()),
+        path: Routes.phone,
+        builder: (ctx, st) => PhoneInputScreen(
+          flow: st.extra is AuthFlow
+              ? st.extra! as AuthFlow
+              : const AuthFlow(mode: AuthMode.signUp),
+        ),
+      ),
       GoRoute(
-          path: Routes.onboardLocation,
-          builder: (_, __) => const HomeLocationScreen()),
+        path: Routes.otp,
+        builder: (ctx, st) => OtpVerifyScreen(
+          flow: st.extra is AuthFlow
+              ? st.extra! as AuthFlow
+              : const AuthFlow(mode: AuthMode.signUp),
+        ),
+      ),
       GoRoute(
-          path: Routes.onboardFee,
-          builder: (_, __) => const VisitFeeScreen()),
-      GoRoute(path: Routes.kycIntro, builder: (_, __) => const KycIntroScreen()),
+        path: Routes.onboardCategory,
+        builder: (_, __) => const CategorySelectScreen(),
+      ),
       GoRoute(
-          path: Routes.kycAadhaar,
-          builder: (_, __) => const AadhaarScreen()),
+        path: Routes.onboardExperience,
+        builder: (_, __) => const ExperienceScreen(),
+      ),
       GoRoute(
-          path: Routes.kycSelfie,
-          builder: (_, __) => const SelfieScreen()),
-      GoRoute(path: Routes.kycDocs, builder: (_, __) => const DocumentsScreen()),
+        path: Routes.onboardLocation,
+        builder: (_, __) => const HomeLocationScreen(),
+      ),
       GoRoute(
-          path: Routes.kycPending,
-          builder: (_, __) => const PendingReviewScreen()),
-      GoRoute(path: Routes.home, builder: (_, __) => const HomeShell()),
+        path: Routes.onboardFee,
+        builder: (_, __) => const VisitFeeScreen(),
+      ),
+      GoRoute(
+        path: Routes.kycIntro,
+        builder: (_, __) => const KycIntroScreen(),
+      ),
+      GoRoute(
+        path: Routes.kycAadhaar,
+        builder: (_, __) => const AadhaarScreen(),
+      ),
+      GoRoute(
+        path: Routes.kycSelfie,
+        builder: (_, __) => const SelfieScreen(),
+      ),
+      GoRoute(
+        path: Routes.kycDocs,
+        builder: (_, __) => const DocumentsScreen(),
+      ),
+      GoRoute(
+        path: Routes.kycPending,
+        builder: (_, __) => const PendingReviewScreen(),
+      ),
+      GoRoute(
+        path: Routes.home,
+        builder: (_, __) => const HomeShell(),
+      ),
       GoRoute(
         path: Routes.offer,
         builder: (ctx, st) => OfferDetailScreen(offerId: st.extra as String?),
       ),
       GoRoute(
-          path: Routes.activeJob,
-          builder: (_, __) => const ActiveJobScreen()),
+        path: Routes.activeJob,
+        builder: (_, __) => const ActiveJobScreen(),
+      ),
     ],
   );
 });

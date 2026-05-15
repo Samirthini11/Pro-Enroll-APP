@@ -112,9 +112,14 @@ class _JobsTabState extends ConsumerState<JobsTab> {
   }
 }
 
+String _initial(String? name) {
+  if (name == null || name.isEmpty) return 'P';
+  return name.trim().substring(0, 1).toUpperCase();
+}
+
 class _Header extends StatelessWidget {
   const _Header({required this.profile, required this.title});
-  final dynamic profile;
+  final ProProfile profile;
   final String title;
 
   @override
@@ -140,7 +145,7 @@ class _Header extends StatelessWidget {
           radius: 22,
           backgroundColor: AppTheme.brandPrimaryLight,
           child: Text(
-            (profile.fullName ?? 'P').characters.first.toUpperCase(),
+            _initial(profile.fullName),
             style: const TextStyle(
               color: AppTheme.brandPrimaryDark,
               fontWeight: FontWeight.w800,

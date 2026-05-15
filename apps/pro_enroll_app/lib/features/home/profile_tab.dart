@@ -12,6 +12,11 @@ import '../../state/app_state.dart';
 import '../../state/locale_state.dart';
 import '../shared/widgets.dart';
 
+String _initial(String? name) {
+  if (name == null || name.isEmpty) return 'P';
+  return name.trim().substring(0, 1).toUpperCase();
+}
+
 class ProfileTab extends ConsumerWidget {
   const ProfileTab({super.key});
 
@@ -61,10 +66,7 @@ class ProfileTab extends ConsumerWidget {
                       radius: 32,
                       backgroundColor: Colors.white,
                       child: Text(
-                        (profile.fullName ?? 'P')
-                            .characters
-                            .first
-                            .toUpperCase(),
+                        _initial(profile.fullName),
                         style: const TextStyle(
                           color: AppTheme.brandPrimary,
                           fontWeight: FontWeight.w800,
@@ -248,7 +250,7 @@ class ProfileTab extends ConsumerWidget {
             danger: true,
             onTap: () {
               ref.read(authProvider.notifier).signOut();
-              context.go(Routes.welcome);
+              context.go(Routes.authLanding);
             },
           ),
         ],

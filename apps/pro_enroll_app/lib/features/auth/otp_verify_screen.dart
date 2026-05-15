@@ -5,12 +5,16 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/i18n.dart';
 import '../../core/theme.dart';
+import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../shared/widgets.dart';
+import 'auth_flow.dart';
 
 class OtpVerifyScreen extends ConsumerStatefulWidget {
-  const OtpVerifyScreen({super.key});
+  const OtpVerifyScreen({super.key, this.flow = const AuthFlow(mode: AuthMode.signUp)});
+
+  final AuthFlow flow;
 
   @override
   ConsumerState<OtpVerifyScreen> createState() => _OtpVerifyScreenState();
@@ -34,10 +38,23 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
         .verifyOtp(_controller.text.trim());
     if (!mounted) return;
     setState(() => _busy = false);
-    if (ok) {
-      context.go(Routes.onboardCategory);
-    } else {
+    if (!ok) {
       setState(() => _error = 'Invalid OTP. Try again.');
+      return;
+    }
+
+    if (widget.flow.isSignIn) {
+      // Returning pro — pretend the backend says they're already
+      // verified and seed some sample stats so the Home shell isn't
+      // empty in the mock build.
+      final pn = ref.read(profileProvider.notifier);
+      pn.setName(ref.read(profileProvider).fullName ?? 'Pro user');
+      pn.setKyc(KycStatus.verified);
+      pn.seedDemoStats();
+      pn.setAvailability(true);
+      context.go(Routes.home);
+    } else {
+      context.go(Routes.onboardCategory);
     }
   }
 
@@ -117,7 +134,7 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
                   color: Colors.white,
                 ),
               )
-            : Text(l.t('common.submit')),
+            : Text(widget.flow.isSignIn ? 'Sign in' : l.t('common.submit')),
       ),
     );
   }
