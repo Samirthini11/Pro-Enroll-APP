@@ -12,10 +12,16 @@ class MockRepository {
 
   final _rand = Random();
 
+  /// Max value that is safe for `Random.nextInt` across both Dart VM and
+  /// JavaScript. On the web, ints are JS numbers, so any expression like
+  /// `1 << 32` overflows to 0 and `nextInt(0)` throws. Stick to a fixed
+  /// 31-bit positive int instead.
+  static const int _maxRandom = 0x7FFFFFFF;
+
   // ── Auth ────────────────────────────────────────────────────────────
   Future<String> sendOtp(String phone) async {
     await _delay();
-    return 'req_${_rand.nextInt(1 << 32)}';
+    return 'req_${_rand.nextInt(_maxRandom)}';
   }
 
   Future<bool> verifyOtp({required String requestId, required String otp}) async {
@@ -28,7 +34,7 @@ class MockRepository {
   // ── KYC ────────────────────────────────────────────────────────────
   Future<String> initiateAadhaar(String last4) async {
     await _delay();
-    return 'kyc_${_rand.nextInt(1 << 32)}';
+    return 'kyc_${_rand.nextInt(_maxRandom)}';
   }
 
   Future<bool> verifyAadhaarOtp({required String kycRefId, required String otp}) async {
