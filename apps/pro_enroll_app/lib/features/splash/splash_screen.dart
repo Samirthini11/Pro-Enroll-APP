@@ -43,20 +43,20 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                   width: iconSize,
                   height: iconSize,
                   decoration: BoxDecoration(
-                    color: Colors.white,
                     borderRadius: BorderRadius.circular(iconBox),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
+                        color: Colors.black.withValues(alpha: 0.22),
                         blurRadius: 24,
                         offset: const Offset(0, 12),
                       ),
                     ],
                   ),
-                  child: Icon(
-                    Icons.engineering,
-                    size: iconSize * 0.6,
-                    color: AppTheme.brandPrimary,
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    'assets/branding/app_icon_1024.png',
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
                   ),
                 ),
                 const SizedBox(height: 24),
