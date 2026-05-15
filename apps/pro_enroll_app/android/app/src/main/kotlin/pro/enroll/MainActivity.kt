@@ -1,4 +1,4 @@
-package com.proenroll.pro_enroll_app
+package pro.enroll
 
 import io.flutter.embedding.android.FlutterActivity
 

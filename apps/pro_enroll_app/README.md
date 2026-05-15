@@ -111,11 +111,79 @@ shortcuts are baked in:
 - **Mock job offers** are generated for whatever categories you picked,
   with realistic Pondicherry / Karaikal addresses.
 
+## Firebase phone-OTP setup
+
+The OTP flow is wired to **Firebase Authentication** (phone provider)
+on Android. iOS and Web fall back to the in-memory mock until their
+Firebase configs are added.
+
+What is already in the repo:
+
+- `android/app/google-services.json` (project `proenroll-4ff13`, package
+  `pro.enroll`).
+- `lib/firebase_options.dart` (hand-written from the same config; see
+  the docstring at the top of the file).
+- `firebase_core` + `firebase_auth` in `pubspec.yaml`.
+- The Google Services Gradle plugin applied in
+  `android/settings.gradle.kts` and `android/app/build.gradle.kts`.
+- `applicationId` and `namespace` set to `pro.enroll` to match the
+  Firebase Console package.
+
+### One-time Firebase Console setup you still need to do
+
+1. **Enable the Phone provider.** Firebase Console → Build → Authentication
+   → *Sign-in method* tab → enable **Phone**.
+2. **Add your debug SHA-1 fingerprint** to the Android app in
+   Firebase Console → Project settings → Your apps → Android. Without a
+   matching SHA-1 the SafetyNet/Play Integrity check fails and you'll
+   see `app-not-authorized` / `missing-client-identifier`. Get it from:
+
+   ```bash
+   cd android
+   ./gradlew signingReport
+   # copy the SHA-1 from the `debug` variant
+   ```
+
+   After adding the SHA-1, re-download `google-services.json` and
+   replace `apps/pro_enroll_app/android/app/google-services.json`.
+3. **Add a release SHA-1** the same way once you have a release keystore.
+4. **(Recommended) Test numbers.** In *Sign-in method → Phone → Phone
+   numbers for testing*, add a fake number like `+91 9000000001` with a
+   fixed code (e.g. `654321`). You can use this in CI / on devices
+   without sending real SMS.
+
+### iOS phone-OTP (when you're ready)
+
+1. Add an iOS app to the Firebase project with bundle id `pro.enroll`.
+2. Drop the downloaded `GoogleService-Info.plist` into `ios/Runner/`.
+3. Replace the `iOS` branch in `lib/firebase_options.dart`.
+4. Upload an **APNs auth key** in Firebase Console for production push +
+   silent-push phone verification.
+
+### Web phone-OTP (when you're ready)
+
+1. Add a Web app to the Firebase project.
+2. Replace the `kIsWeb` branch in `lib/firebase_options.dart` with the
+   `apiKey` / `authDomain` / `projectId` / etc. from the new config.
+3. Phone auth on web requires a reCAPTCHA verifier — wire one in
+   `FirebaseOtpService.sendOtp` for the web path. We've intentionally
+   skipped this for v1.
+
+### How the fallback works
+
+- `FirebaseOtpService.isAvailable` reads `Firebase.app()`. If Firebase
+  was initialised successfully in `main.dart`, the auth notifier uses
+  the real Firebase service.
+- If Firebase isn't available on this platform (no config, web demo,
+  init error), the auth notifier falls back to `MockRepository`. Any
+  6-digit OTP works in mock mode, except `000000` which fails so we
+  can test the error UX.
+
 ## Next steps
 
 1. Replace `MockRepository` with a generated API client (Dio + retrofit
    from the OpenAPI spec).
-2. Add Firebase (FCM push, Crashlytics) and real OTP via MSG91.
+2. Add FCM push + Crashlytics.
 3. Integrate Google Maps for the location and active-job screens.
 4. Wire up Razorpay Payouts for the daily wallet → UPI flow.
 5. Move i18n strings to ARB and add French for the Pondicherry expat

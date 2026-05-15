@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/i18n.dart';
 import '../../core/theme.dart';
+import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../shared/widgets.dart';
@@ -39,7 +40,36 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
     ref.read(profileProvider.notifier).setPhone(phone);
     if (!mounted) return;
     setState(() => _busy = false);
+
+    final auth = ref.read(authProvider);
+    if (auth.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(auth.errorMessage!)),
+      );
+      return;
+    }
+    if (auth.autoVerified) {
+      // Android instant verification — skip OTP entry and route as if
+      // the OTP screen had completed.
+      _afterAuthSuccess();
+      return;
+    }
     context.push(Routes.otp, extra: widget.flow);
+  }
+
+  void _afterAuthSuccess() {
+    // Mirror the OTP screen's branching so instant verification lands
+    // the user in the same place they'd reach after typing the OTP.
+    if (widget.flow.isSignIn) {
+      final pn = ref.read(profileProvider.notifier);
+      pn.setName(ref.read(profileProvider).fullName ?? 'Pro user');
+      pn.setKyc(KycStatus.verified);
+      pn.seedDemoStats();
+      pn.setAvailability(true);
+      context.go(Routes.home);
+    } else {
+      context.go(Routes.onboardCategory);
+    }
   }
 
   @override

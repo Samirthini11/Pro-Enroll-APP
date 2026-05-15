@@ -1,10 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/firebase_otp_service.dart';
 import '../data/mock_repository.dart';
 import '../data/models.dart';
 
 final repositoryProvider = Provider<MockRepository>((ref) => MockRepository());
+
+final firebaseOtpServiceProvider =
+    Provider<FirebaseOtpService>((ref) => FirebaseOtpService());
 
 /// ─── Auth ──────────────────────────────────────────────────────────────
 @immutable
@@ -13,47 +17,111 @@ class AuthState {
     this.isAuthenticated = false,
     this.phoneE164,
     this.otpRequestId,
+    this.errorMessage,
+    this.autoVerified = false,
   });
 
   final bool isAuthenticated;
   final String? phoneE164;
   final String? otpRequestId;
+  final String? errorMessage;
+
+  /// True when Firebase auto-verified the SMS on Android and we should
+  /// skip the OTP entry screen entirely.
+  final bool autoVerified;
 
   AuthState copyWith({
     bool? isAuthenticated,
     String? phoneE164,
     String? otpRequestId,
+    String? errorMessage,
+    bool? autoVerified,
+    bool clearError = false,
   }) =>
       AuthState(
         isAuthenticated: isAuthenticated ?? this.isAuthenticated,
         phoneE164: phoneE164 ?? this.phoneE164,
         otpRequestId: otpRequestId ?? this.otpRequestId,
+        errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+        autoVerified: autoVerified ?? this.autoVerified,
       );
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier(this._repo) : super(const AuthState());
+  AuthNotifier(this._repo, this._firebase) : super(const AuthState());
   final MockRepository _repo;
+  final FirebaseOtpService _firebase;
+
+  bool get _useFirebase => FirebaseOtpService.isAvailable;
 
   Future<void> startPhone(String phoneE164) async {
-    final reqId = await _repo.sendOtp(phoneE164);
-    state = state.copyWith(phoneE164: phoneE164, otpRequestId: reqId);
+    state = state.copyWith(
+      phoneE164: phoneE164,
+      autoVerified: false,
+      clearError: true,
+    );
+
+    if (_useFirebase) {
+      final r = await _firebase.sendOtp(phoneE164);
+      if (r.isAutoVerified) {
+        state = state.copyWith(isAuthenticated: true, autoVerified: true);
+      } else if (r.isFailed) {
+        state = state.copyWith(errorMessage: r.errorMessage);
+      } else {
+        // OTP sent; nothing else to do until the user types the code.
+        state = state.copyWith(otpRequestId: 'firebase');
+      }
+    } else {
+      final reqId = await _repo.sendOtp(phoneE164);
+      state = state.copyWith(otpRequestId: reqId);
+    }
   }
 
   Future<bool> verifyOtp(String otp) async {
+    state = state.copyWith(clearError: true);
+
+    if (state.autoVerified) {
+      // Already signed in by Firebase instant verification.
+      state = state.copyWith(isAuthenticated: true);
+      return true;
+    }
+
+    if (_useFirebase) {
+      final err = await _firebase.verifyOtp(otp);
+      if (err == null) {
+        state = state.copyWith(isAuthenticated: true);
+        return true;
+      }
+      state = state.copyWith(errorMessage: err);
+      return false;
+    }
+
     final id = state.otpRequestId;
     if (id == null) return false;
     final ok = await _repo.verifyOtp(requestId: id, otp: otp);
-    if (ok) state = state.copyWith(isAuthenticated: true);
+    if (ok) {
+      state = state.copyWith(isAuthenticated: true);
+    } else {
+      state = state.copyWith(errorMessage: 'Invalid OTP. Try again.');
+    }
     return ok;
   }
 
-  void signOut() => state = const AuthState();
+  void signOut() {
+    if (_useFirebase) {
+      // Fire-and-forget; we don't need to wait.
+      _firebase.signOut();
+    }
+    state = const AuthState();
+  }
 }
 
 final authProvider =
     StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier(ref.read(repositoryProvider));
+  return AuthNotifier(
+    ref.read(repositoryProvider),
+    ref.read(firebaseOtpServiceProvider),
+  );
 });
 
 /// ─── Profile ────────────────────────────────────────────────────────────

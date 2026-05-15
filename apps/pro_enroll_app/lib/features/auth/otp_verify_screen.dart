@@ -39,7 +39,8 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok) {
-      setState(() => _error = 'Invalid OTP. Try again.');
+      final msg = ref.read(authProvider).errorMessage ?? 'Invalid OTP. Try again.';
+      setState(() => _error = msg);
       return;
     }
 
