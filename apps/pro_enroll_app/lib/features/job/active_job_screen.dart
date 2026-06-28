@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/contact_launcher.dart';
 import '../../core/constants.dart';
 import '../../core/i18n.dart';
 import '../../core/responsive.dart';
@@ -10,6 +11,7 @@ import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../state/app_state.dart';
 import '../../state/locale_state.dart';
+import '../shared/map_preview.dart';
 import '../shared/widgets.dart';
 
 class ActiveJobScreen extends ConsumerStatefulWidget {
@@ -45,6 +47,9 @@ class _ActiveJobScreenState extends ConsumerState<ActiveJobScreen> {
       orElse: () => supportedCategories.first,
     );
     final mapH = context.responsive<double>(xs: 150, sm: 170, md: 200);
+    final fallbackCity = cityById(ref.watch(profileProvider).cityId ?? supportedCities.first.id);
+    final mapLat = job.customerLat ?? fallbackCity.latitude;
+    final mapLng = job.customerLng ?? fallbackCity.longitude;
 
     return AppPage(
       title: cat.name(lang),
@@ -57,64 +62,23 @@ class _ActiveJobScreenState extends ConsumerState<ActiveJobScreen> {
           ),
           const SizedBox(height: 14),
 
-          // Map placeholder with subtle grid.
-          Container(
-            height: mapH,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              gradient: const LinearGradient(
-                colors: [AppTheme.brandPrimaryLight, Colors.white],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                CustomPaint(size: Size.infinite, painter: _MapGrid()),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: AppTheme.brandPrimary,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppTheme.brandPrimary
-                                .withValues(alpha: 0.35),
-                            blurRadius: 16,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.location_on,
-                          size: 30, color: Colors.white),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                      child: Text(
-                        '${job.distanceKm.toStringAsFixed(1)} km away',
-                        style: const TextStyle(
-                          color: AppTheme.brandPrimaryDark,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+            child: SizedBox(
+              height: mapH,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppTheme.border),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLg),
                 ),
-              ],
+                child: MapPreview(
+                  latitude: mapLat,
+                  longitude: mapLng,
+                  radiusKm: job.distanceKm.clamp(1, 25),
+                  caption:
+                      '${job.distanceKm.toStringAsFixed(1)} km away',
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -146,12 +110,16 @@ class _ActiveJobScreenState extends ConsumerState<ActiveJobScreen> {
                   LayoutBuilder(builder: (ctx, bc) {
                     final tight = bc.maxWidth < 300;
                     final call = OutlinedButton.icon(
-                      onPressed: () {},
+                      onPressed: () => ContactLauncher.call(context, job.customerPhoneE164),
                       icon: const Icon(Icons.call),
                       label: const Text('Call'),
                     );
                     final chat = OutlinedButton.icon(
-                      onPressed: () {},
+                      onPressed: () => ContactLauncher.chat(
+                        context,
+                        job.customerPhoneE164,
+                        message: 'Hi ${job.customerName}, regarding job ${job.code}.',
+                      ),
                       icon: const Icon(Icons.chat_bubble_outline),
                       label: const Text('Chat'),
                     );
@@ -249,7 +217,7 @@ class _ActiveJobScreenState extends ConsumerState<ActiveJobScreen> {
     switch (job.status) {
       case BookingStatus.accepted:
         return FilledButton.icon(
-          onPressed: () => ref
+          onPressed: () async => ref
               .read(jobsProvider.notifier)
               .updateStatus(BookingStatus.onTheWay),
           icon: const Icon(Icons.navigation),
@@ -257,7 +225,7 @@ class _ActiveJobScreenState extends ConsumerState<ActiveJobScreen> {
         );
       case BookingStatus.onTheWay:
         return FilledButton.icon(
-          onPressed: () => ref
+          onPressed: () async => ref
               .read(jobsProvider.notifier)
               .updateStatus(BookingStatus.inProgress),
           icon: const Icon(Icons.build_outlined),
@@ -276,10 +244,10 @@ class _ActiveJobScreenState extends ConsumerState<ActiveJobScreen> {
     }
   }
 
-  void _onComplete() {
+  Future<void> _onComplete() async {
     final v = int.tryParse(_amountCtrl.text.trim());
     if (v == null || v <= 0) return;
-    ref.read(jobsProvider.notifier).complete(v);
+    await ref.read(jobsProvider.notifier).complete(v);
   }
 
   String _statusLabel(BookingStatus s) {
@@ -311,25 +279,6 @@ class _ActiveJobScreenState extends ConsumerState<ActiveJobScreen> {
         return AppTheme.brandPrimary;
     }
   }
-}
-
-class _MapGrid extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..color = AppTheme.brandPrimary.withValues(alpha: 0.08)
-      ..strokeWidth = 1;
-    const step = 24.0;
-    for (double x = 0; x < size.width; x += step) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), p);
-    }
-    for (double y = 0; y < size.height; y += step) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), p);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _CompleteCard extends ConsumerWidget {

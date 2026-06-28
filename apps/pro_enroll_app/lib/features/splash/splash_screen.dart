@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/app_config.dart';
 import '../../core/i18n.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../routing/router.dart';
+import '../../state/categories_provider.dart';
+import '../../state/app_state.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -18,9 +21,35 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(const Duration(milliseconds: 1100), () {
-      if (mounted) context.go(Routes.authLanding);
-    });
+    Future<void>.delayed(const Duration(milliseconds: 1100), _navigateNext);
+  }
+
+  Future<void> _navigateNext() async {
+    if (!mounted) return;
+
+    try {
+      if (AppConfig.hasApi) {
+        ref.read(categoriesProvider);
+        final restored =
+            await ref.read(authProvider.notifier).tryRestoreSession();
+        if (!mounted) return;
+        if (restored) {
+          final route =
+              ref.read(authProvider.notifier).routeAfterSessionRestore();
+          context.go(route);
+          return;
+        }
+      }
+
+      if (mounted) {
+        context.go(Routes.authLanding);
+      }
+    } catch (e) {
+      debugPrint('Splash navigation error: $e');
+      if (mounted) {
+        context.go(Routes.authLanding);
+      }
+    }
   }
 
   @override
@@ -60,11 +89,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  'Pro-Enroll',
+                Text(
+                  'QuickFix',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 32,
+                    fontSize: context.responsive<double>(xs: 26, sm: 30, md: 32),
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.5,
                   ),

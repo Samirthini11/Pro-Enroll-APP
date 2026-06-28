@@ -1,6 +1,6 @@
 {
-    "name": "pro_enroll_app",
-    "short_name": "pro_enroll_app",
+    "name": "ProConnect",
+    "short_name": "ProConnect",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

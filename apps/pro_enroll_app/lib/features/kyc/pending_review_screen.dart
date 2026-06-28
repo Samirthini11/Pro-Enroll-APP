@@ -77,10 +77,12 @@ class PendingReviewScreen extends ConsumerWidget {
         ],
       ),
       bottom: OutlinedButton(
-        onPressed: () {
+        onPressed: () async {
+          await ref.read(repositoryProvider).simulateKycApproval();
           ref.read(profileProvider.notifier).setKyc(KycStatus.verified);
           ref.read(profileProvider.notifier).seedDemoStats();
-          context.go(Routes.home);
+          await ref.read(profileProvider.notifier).loadFromApi();
+          if (context.mounted) context.go(Routes.home);
         },
         child: const Text('Continue (demo: simulate approval)'),
       ),

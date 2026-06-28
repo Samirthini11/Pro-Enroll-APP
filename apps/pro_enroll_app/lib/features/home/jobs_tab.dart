@@ -10,6 +10,7 @@ import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../../state/locale_state.dart';
+import '../shared/book_service_action.dart';
 import '../shared/widgets.dart';
 
 class JobsTab extends ConsumerStatefulWidget {
@@ -51,7 +52,10 @@ class _JobsTabState extends ConsumerState<JobsTab> {
           physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics()),
           children: [
-            _Header(profile: profile, title: l.t('jobs.title')),
+            _Header(
+              profile: profile,
+              title: l.t('jobs.title'),
+            ),
             const SizedBox(height: 16),
             _AvailabilityCard(
               available: profile.isAvailable,
@@ -112,47 +116,63 @@ class _JobsTabState extends ConsumerState<JobsTab> {
   }
 }
 
-String _initial(String? name) {
-  if (name == null || name.isEmpty) return 'P';
-  return name.trim().substring(0, 1).toUpperCase();
-}
-
-class _Header extends StatelessWidget {
+class _Header extends ConsumerWidget {
   const _Header({required this.profile, required this.title});
   final ProProfile profile;
   final String title;
 
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+        gradient: LinearGradient(
+          colors: [
+            AppTheme.brandPrimary.withValues(alpha: 0.08),
+            AppTheme.brandPrimaryLight.withValues(alpha: 0.45),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Hi, ${profile.fullName ?? 'Pro'} 👋',
-                style: Theme.of(context).textTheme.titleLarge,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Hi, ${profile.fullName ?? 'Pro'} 👋',
+                      style: Theme.of(context).textTheme.titleLarge,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(title, style: const TextStyle(color: AppTheme.textMuted)),
+                  ],
+                ),
               ),
-              const SizedBox(height: 2),
-              Text(title, style: const TextStyle(color: AppTheme.textMuted)),
+              BookServiceAvatar(
+                name: profile.fullName,
+                radius: 24,
+                backgroundColor: Colors.white,
+                onTap: () => switchToCustomerMode(context, ref),
+              ),
             ],
           ),
-        ),
-        CircleAvatar(
-          radius: 22,
-          backgroundColor: AppTheme.brandPrimaryLight,
-          child: Text(
-            _initial(profile.fullName),
-            style: const TextStyle(
-              color: AppTheme.brandPrimaryDark,
-              fontWeight: FontWeight.w800,
-            ),
+          const SizedBox(height: 12),
+          BookServiceChip(
+            compact: true,
+            onTap: () => switchToCustomerMode(context, ref),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

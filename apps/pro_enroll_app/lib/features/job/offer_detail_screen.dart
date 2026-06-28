@@ -188,16 +188,16 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
       bottom: LayoutBuilder(builder: (ctx, bc) {
         final tight = bc.maxWidth < 320;
         final reject = OutlinedButton(
-          onPressed: () {
-            ref.read(jobsProvider.notifier).reject(offer);
-            context.pop();
+          onPressed: () async {
+            await ref.read(jobsProvider.notifier).reject(offer);
+            if (ctx.mounted) context.pop();
           },
           child: Text(l.t('offer.reject')),
         );
         final accept = FilledButton(
-          onPressed: () {
-            ref.read(jobsProvider.notifier).accept(offer);
-            context.go(Routes.activeJob);
+          onPressed: () async {
+            await ref.read(jobsProvider.notifier).accept(offer);
+            if (ctx.mounted) context.go(Routes.activeJob);
           },
           child: Text(l.t('offer.accept')),
         );

@@ -8,7 +8,9 @@ import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
+import '../../state/categories_provider.dart';
 import '../../state/locale_state.dart';
+import '../shared/api_errors.dart';
 import '../shared/widgets.dart';
 
 class ExperienceScreen extends ConsumerStatefulWidget {
@@ -39,10 +41,12 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
     super.dispose();
   }
 
-  void _continue() {
+  Future<void> _continue() async {
     final profile = ref.read(profileProvider);
-    ref.read(profileProvider.notifier).setName(_nameCtrl.text.trim());
-    ref.read(profileProvider.notifier).setSkills([
+    final name = _nameCtrl.text.trim();
+    final pn = ref.read(profileProvider.notifier);
+    pn.setName(name);
+    pn.setSkills([
       for (final s in profile.skills)
         ProSkill(
           categoryCode: s.categoryCode,
@@ -50,6 +54,16 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
           isPrimary: s.isPrimary,
         ),
     ]);
+    try {
+      await pn.persistExperience(
+        fullName: name,
+        yearsByCategory: Map<String, int>.from(_years),
+      );
+    } catch (e) {
+      if (mounted) showApiError(context, e, fallback: 'Could not save experience.');
+      return;
+    }
+    if (!mounted) return;
     context.push(Routes.onboardLocation);
   }
 
@@ -58,6 +72,7 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
     final l = ref.watch(lProvider);
     final lang = ref.watch(localeProvider).languageCode;
     final profile = ref.watch(profileProvider);
+    final categories = ref.watch(categoriesListProvider);
 
     return AppPage(
       title: l.t('onboarding.experience.title'),
@@ -88,14 +103,8 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
           const SizedBox(height: 10),
           for (final s in profile.skills) ...[
             _SkillRow(
-              icon: supportedCategories
-                  .firstWhere((c) => c.code == s.categoryCode,
-                      orElse: () => supportedCategories.first)
-                  .icon,
-              label: supportedCategories
-                  .firstWhere((c) => c.code == s.categoryCode,
-                      orElse: () => supportedCategories.first)
-                  .name(lang),
+              icon: lookupCategory(categories, s.categoryCode).icon,
+              label: lookupCategory(categories, s.categoryCode).name(lang),
               years: _years[s.categoryCode] ?? 1,
               onChange: (v) =>
                   setState(() => _years[s.categoryCode] = v.clamp(0, 50)),

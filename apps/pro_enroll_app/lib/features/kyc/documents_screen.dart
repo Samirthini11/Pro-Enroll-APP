@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/app_config.dart';
 import '../../core/i18n.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
+import '../shared/api_errors.dart';
 import '../shared/widgets.dart';
 
 class DocumentsScreen extends ConsumerStatefulWidget {
@@ -18,6 +20,7 @@ class DocumentsScreen extends ConsumerStatefulWidget {
 
 class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
   final Set<String> _uploaded = {};
+  bool _busy = false;
 
   void _toggle(String key) {
     setState(() {
@@ -29,9 +32,24 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
     });
   }
 
-  void _submit() {
-    ref.read(profileProvider.notifier).setKyc(KycStatus.inReview);
-    context.go(Routes.kycPending);
+  Future<void> _submit() async {
+    setState(() => _busy = true);
+    try {
+      if (AppConfig.hasApi) {
+        await ref.read(repositoryProvider).uploadKycDocuments(
+              _uploaded.isEmpty ? ['tools'] : _uploaded.toList(),
+            );
+      }
+      ref.read(profileProvider.notifier).setKyc(KycStatus.inReview);
+      if (!mounted) return;
+      context.go(Routes.kycPending);
+    } catch (e) {
+      if (mounted) {
+        showApiError(context, e, fallback: 'Could not upload documents.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -58,8 +76,17 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
         ],
       ),
       bottom: FilledButton(
-        onPressed: _submit,
-        child: Text(l.t('common.submit')),
+        onPressed: _busy ? null : _submit,
+        child: _busy
+            ? const SizedBox(
+                height: 22,
+                width: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Colors.white,
+                ),
+              )
+            : Text(l.t('common.submit')),
       ),
     );
   }
@@ -71,7 +98,7 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
       icon: icon,
       title: title,
       subtitle: uploaded ? 'Uploaded — tap to remove' : body,
-      onTap: () => _toggle(key),
+      onTap: _busy ? null : () => _toggle(key),
       trailing: Icon(
         uploaded ? Icons.check_circle : Icons.add_circle_outline,
         color:

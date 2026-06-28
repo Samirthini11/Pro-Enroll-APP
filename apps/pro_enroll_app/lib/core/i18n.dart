@@ -22,6 +22,7 @@ const _strings = <String, Map<String, String>>{
   'common.back': {'en': 'Back', 'ta': 'பின்செல்'},
   'common.save': {'en': 'Save', 'ta': 'சேமி'},
   'common.cancel': {'en': 'Cancel', 'ta': 'ரத்து'},
+  'common.ok': {'en': 'OK', 'ta': 'சரி'},
   'common.yes': {'en': 'Yes', 'ta': 'ஆம்'},
   'common.no': {'en': 'No', 'ta': 'இல்லை'},
   'common.online': {'en': 'Online', 'ta': 'ஆன்லைன்'},
@@ -54,6 +55,30 @@ const _strings = <String, Map<String, String>>{
     'ta': '{phone} -க்கு அனுப்பப்பட்ட 6-இலக்க குறியீட்டை உள்ளிடவும்',
   },
   'auth.otp.resend': {'en': 'Resend OTP', 'ta': 'மீண்டும் OTP அனுப்பு'},
+  'auth.otp.invalid_title': {
+    'en': 'Invalid OTP',
+    'ta': 'தவறான OTP',
+  },
+  'auth.otp.invalid': {
+    'en': 'Incorrect OTP. Please check the code and try again.',
+    'ta': 'தவறான OTP. குறியீட்டை சரிபார்த்து முயற்சிக்கவும்.',
+  },
+  'auth.otp.session_expired': {
+    'en': 'OTP session expired. Go back and request a new code.',
+    'ta': 'OTP காலாவதியானது. திரும்பிச் சென்று புதிய குறியீட்டை கோரவும்.',
+  },
+  'auth.signup.otp.title': {
+    'en': 'Create account — Verify OTP',
+    'ta': 'கணக்கு உருவாக்கம் — OTP சரிபார்ப்பு',
+  },
+  'auth.signup.otp.helper': {
+    'en': 'Enter the 6-digit code we sent to {phone} to finish creating your account.',
+    'ta': 'உங்கள் கணக்கை உருவாக்க {phone} -க்கு அனுப்பிய 6-இலக்க குறியீட்டை உள்ளிடவும்.',
+  },
+  'auth.signup.otp.verify': {
+    'en': 'Verify & create account',
+    'ta': 'சரிபார்த்து கணக்கை உருவாக்கு',
+  },
 
   // Onboarding
   'onboarding.welcome.title': {
@@ -92,14 +117,30 @@ const _strings = <String, Map<String, String>>{
   },
   'onboarding.location.helper': {
     'en':
-        'We will only show you jobs from customers inside your chosen radius.',
+        'We use your current location to pick the nearest city and show jobs within your radius.',
     'ta':
-        'நீங்கள் தேர்ந்தெடுத்த தூரத்திற்குள் உள்ள வாடிக்கையாளர்களின் வேலைகளை மட்டுமே காண்பிப்போம்.',
+        'அருகிலுள்ள நகரத்தைத் தேர்ந்தெடுக்கவும், உங்கள் எல்லைக்குள் வேலைகளைக் காட்டவும் தற்போதைய இருப்பிடத்தைப் பயன்படுத்துகிறோம்.',
   },
   'onboarding.location.city': {'en': 'City', 'ta': 'நகரம்'},
   'onboarding.location.radius': {
     'en': 'Work radius (km)',
     'ta': 'வேலை எல்லை (கி.மீ)',
+  },
+  'onboarding.location.detecting': {
+    'en': 'Detecting your location…',
+    'ta': 'உங்கள் இருப்பிடம் கண்டறியப்படுகிறது…',
+  },
+  'onboarding.location.using_gps': {
+    'en': 'Using your current location',
+    'ta': 'தற்போதைய இருப்பிடம் பயன்படுத்தப்படுகிறது',
+  },
+  'onboarding.location.use_current': {
+    'en': 'Use current location',
+    'ta': 'தற்போதைய இருப்பிடத்தைப் பயன்படுத்து',
+  },
+  'onboarding.location.unavailable': {
+    'en': 'Location unavailable — pick your city manually.',
+    'ta': 'இருப்பிடம் கிடைக்கவில்லை — நகரத்தை கைமுறையாகத் தேர்ந்தெடுக்கவும்.',
   },
 
   'onboarding.fee.title': {
@@ -201,10 +242,76 @@ const _strings = <String, Map<String, String>>{
   },
 
   'earnings.title': {'en': 'Earnings', 'ta': 'வருமானம்'},
+  'earnings.subtitle': {
+    'en': 'Your performance & payout overview',
+    'ta': 'உங்கள் செயல்திறன் & பணம் வரவு சுருக்கம்',
+  },
   'earnings.today': {'en': 'Today', 'ta': 'இன்று'},
   'earnings.week': {'en': 'This week', 'ta': 'இந்த வாரம்'},
   'earnings.month': {'en': 'This month', 'ta': 'இந்த மாதம்'},
   'earnings.payouts': {'en': 'Payouts', 'ta': 'பணம் வரவு'},
+  'earnings.payoutsSubtitle': {
+    'en': 'Track pending and settled amounts',
+    'ta': 'நிலுவை மற்றும் செலுத்தப்பட்ட தொகைகளை கண்காணிக்கவும்',
+  },
+  'earnings.performance': {
+    'en': 'Performance overview',
+    'ta': 'செயல்திறன் சுருக்கம்',
+  },
+  'earnings.reviews': {'en': '{count} reviews', 'ta': '{count} மதிப்பீடுகள்'},
+  'earnings.noReviews': {'en': 'No reviews yet', 'ta': 'இன்னும் மதிப்பீடு இல்லை'},
+  'earnings.completed': {'en': 'completed', 'ta': 'முடிந்தது'},
+  'earnings.strongProfile': {'en': 'Strong profile', 'ta': 'வலுவான சுயவிவரம்'},
+  'earnings.keepImproving': {'en': 'Keep improving', 'ta': 'தொடர்ந்து முன்னேறுங்கள்'},
+  'earnings.visitFee': {'en': 'Visit fee', 'ta': 'வருகை கட்டணம்'},
+  'earnings.perVisit': {'en': 'per visit', 'ta': 'ஒரு வருகைக்கு'},
+  'earnings.jobsTodayOne': {
+    'en': '1 job completed today',
+    'ta': 'இன்று 1 வேலை முடிந்தது',
+  },
+  'earnings.jobsTodayMany': {
+    'en': '{count} jobs completed today',
+    'ta': 'இன்று {count} வேலைகள் முடிந்தது',
+  },
+  'earnings.dailyAvg': {
+    'en': '{amount} avg / day',
+    'ta': 'சராசரி {amount} / நாள்',
+  },
+  'earnings.lifetimeJobs': {
+    'en': '{count} lifetime jobs',
+    'ta': 'மொத்தம் {count} வேலைகள்',
+  },
+  'earnings.noJobsYet': {'en': 'No jobs yet', 'ta': 'இன்னும் வேலை இல்லை'},
+  'earnings.pending': {'en': 'Pending', 'ta': 'நிலுவை'},
+  'earnings.paidMonth': {'en': 'Paid this month', 'ta': 'இந்த மாதம் செலுத்தப்பட்டது'},
+  'earnings.paidProgress': {'en': 'Settled this month', 'ta': 'இந்த மாதம் தீர்வு'},
+  'earnings.totalMonth': {'en': 'Earned this month', 'ta': 'இந்த மாதம் வருவாய்'},
+  'earnings.payoutTo': {'en': 'Payout to', 'ta': 'பணம் அனுப்ப'},
+  'earnings.payoutNotSet': {
+    'en': 'Add UPI in Profile',
+    'ta': 'சுயவிவரத்தில் UPI சேர்க்கவும்',
+  },
+  'earnings.insights': {'en': 'Insights', 'ta': 'பகுப்பாய்வு'},
+  'earnings.insightGoOnline': {
+    'en': 'Go online to receive more job offers and grow earnings.',
+    'ta': 'ஆன்லைனில் இருந்து அதிக வேலை ஆஃபர்களைப் பெறுங்கள்.',
+  },
+  'earnings.insightGreatDay': {
+    'en': 'Great progress today — keep your availability on for more jobs.',
+    'ta': 'இன்று நல்ல முன்னேற்றம் — அதிக வேலைகளுக்கு ஆன்லைனில் இருங்கள்.',
+  },
+  'earnings.insightRating': {
+    'en': 'Your {rating}★ rating helps you win more bookings.',
+    'ta': 'உங்கள் {rating}★ மதிப்பீடு அதிக booking-களை வெல்ல உதவும்.',
+  },
+  'earnings.insightNoRating': {
+    'en': 'Complete jobs and collect ratings to boost your Pro Score.',
+    'ta': 'வேலைகளை முடித்து மதிப்பீடுகளைப் பெற Pro Score-ஐ உயர்த்துங்கள்.',
+  },
+  'earnings.insightVisitFee': {
+    'en': 'Your visit fee is {fee} — adjust it in Profile if needed.',
+    'ta': 'உங்கள் வருகை கட்டணம் {fee} — தேவைப்பட்டால் சுயவிவரத்தில் மாற்றவும்.',
+  },
 
   'profile.title': {'en': 'My profile', 'ta': 'என் சுயவிவரம்'},
   'profile.rating': {'en': 'Rating', 'ta': 'மதிப்பீடு'},
@@ -220,6 +327,14 @@ const _strings = <String, Map<String, String>>{
   },
   'profile.language': {'en': 'Language', 'ta': 'மொழி'},
   'profile.signout': {'en': 'Sign out', 'ta': 'வெளியேறு'},
+  'profile.bookService': {
+    'en': 'Book a service',
+    'ta': 'சேவை முன்பதிவு',
+  },
+  'profile.bookService.subtitle': {
+    'en': 'Switch to customer mode — find a Plumber, AC tech, etc.',
+    'ta': 'வாடிக்கையாளர் பயன்முறைக்கு மாறு — Plumber, AC tech போன்றவர்களைக் கண்டறியுங்கள்.',
+  },
 
   'help.title': {'en': 'Help & Support', 'ta': 'உதவி & ஆதரவு'},
   'help.call': {'en': 'Call support', 'ta': 'ஆதரவை அழைக்க'},

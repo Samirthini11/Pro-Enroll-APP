@@ -9,7 +9,10 @@ import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
+import '../../state/categories_provider.dart';
 import '../../state/locale_state.dart';
+import '../shared/api_errors.dart';
+import '../shared/category_price_badges.dart';
 import '../shared/widgets.dart';
 
 class CategorySelectScreen extends ConsumerStatefulWidget {
@@ -34,15 +37,23 @@ class _CategorySelectScreenState extends ConsumerState<CategorySelectScreen> {
     });
   }
 
-  void _continue() {
-    final skills = _selected
+  Future<void> _continue() async {
+    final codes = _selected.toList();
+    final skills = codes
         .map((code) => ProSkill(
               categoryCode: code,
               experienceYears: 1,
-              isPrimary: _selected.first == code,
+              isPrimary: codes.first == code,
             ))
         .toList();
     ref.read(profileProvider.notifier).setSkills(skills);
+    try {
+      await ref.read(profileProvider.notifier).persistCategories(codes);
+    } catch (e) {
+      if (mounted) showApiError(context, e, fallback: 'Could not save skills.');
+      return;
+    }
+    if (!mounted) return;
     context.push(Routes.onboardExperience);
   }
 
@@ -50,62 +61,35 @@ class _CategorySelectScreenState extends ConsumerState<CategorySelectScreen> {
   Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
     final lang = ref.watch(localeProvider).languageCode;
+    final categoriesAsync = ref.watch(categoriesProvider);
     final cols = context.gridColumns;
-    final tileAspect = context.responsive<double>(xs: 0.95, sm: 1.0, md: 1.05);
+    final tileAspect = context.responsive<double>(xs: 0.88, sm: 0.95, md: 1.0);
+    final helper = l.t('onboarding.category.helper');
 
     return AppPage(
       title: l.t('onboarding.category.title'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            l.t('onboarding.category.helper'),
-            style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
-          ),
-          const SizedBox(height: 14),
-          Expanded(
-            child: GridView.builder(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.zero,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cols,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: tileAspect,
-              ),
-              itemCount: supportedCategories.length,
-              itemBuilder: (ctx, i) {
-                final c = supportedCategories[i];
-                final selected = _selected.contains(c.code);
-                return _CategoryTile(
-                  icon: c.icon,
-                  label: c.name(lang),
-                  feeText: '₹${c.defaultVisitFee} visit',
-                  selected: selected,
-                  onTap: () => _toggle(c.code),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Icon(Icons.check_circle,
-                  size: 18,
-                  color: _selected.isEmpty
-                      ? AppTheme.textFaint
-                      : AppTheme.brandPrimary),
-              const SizedBox(width: 6),
-              Text(
-                '${_selected.length} of $_maxSelect selected',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ],
+      child: categoriesAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, __) => _CategoryGrid(
+          helper: helper,
+          categories: ref.watch(categoriesListProvider),
+          lang: lang,
+          cols: cols,
+          tileAspect: tileAspect,
+          selected: _selected,
+          maxSelect: _maxSelect,
+          onToggle: _toggle,
+        ),
+        data: (categories) => _CategoryGrid(
+          helper: helper,
+          categories: categories,
+          lang: lang,
+          cols: cols,
+          tileAspect: tileAspect,
+          selected: _selected,
+          maxSelect: _maxSelect,
+          onToggle: _toggle,
+        ),
       ),
       bottom: FilledButton(
         onPressed: _selected.isEmpty ? null : _continue,
@@ -115,18 +99,92 @@ class _CategorySelectScreenState extends ConsumerState<CategorySelectScreen> {
   }
 }
 
+class _CategoryGrid extends StatelessWidget {
+  const _CategoryGrid({
+    required this.helper,
+    required this.categories,
+    required this.lang,
+    required this.cols,
+    required this.tileAspect,
+    required this.selected,
+    required this.maxSelect,
+    required this.onToggle,
+  });
+
+  final String helper;
+  final List<CategoryRef> categories;
+  final String lang;
+  final int cols;
+  final double tileAspect;
+  final Set<String> selected;
+  final int maxSelect;
+  final ValueChanged<String> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          helper,
+          style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
+        ),
+        const SizedBox(height: 14),
+        Expanded(
+          child: GridView.builder(
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: tileAspect,
+            ),
+            itemCount: categories.length,
+            itemBuilder: (ctx, i) {
+              final c = categories[i];
+              return _CategoryTile(
+                category: c,
+                lang: lang,
+                selected: selected.contains(c.code),
+                onTap: () => onToggle(c.code),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Icon(Icons.check_circle,
+                size: 18,
+                color: selected.isEmpty
+                    ? AppTheme.textFaint
+                    : AppTheme.brandPrimary),
+            const SizedBox(width: 6),
+            Text(
+              '${selected.length} of $maxSelect selected',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _CategoryTile extends StatelessWidget {
   const _CategoryTile({
-    required this.icon,
-    required this.label,
-    required this.feeText,
+    required this.category,
+    required this.lang,
     required this.selected,
     required this.onTap,
   });
 
-  final IconData icon;
-  final String label;
-  final String feeText;
+  final CategoryRef category;
+  final String lang;
   final bool selected;
   final VoidCallback onTap;
 
@@ -164,12 +222,11 @@ class _CategoryTile extends StatelessWidget {
                           : AppTheme.brandPrimaryLight,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(icon, color: AppTheme.brandPrimary, size: 22),
+                    child: Icon(category.icon,
+                        color: AppTheme.brandPrimary, size: 22),
                   ),
                   Icon(
-                    selected
-                        ? Icons.check_circle
-                        : Icons.circle_outlined,
+                    selected ? Icons.check_circle : Icons.circle_outlined,
                     size: 20,
                     color: selected
                         ? AppTheme.brandPrimary
@@ -181,7 +238,7 @@ class _CategoryTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    label,
+                    category.name(lang),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -190,13 +247,12 @@ class _CategoryTile extends StatelessWidget {
                       height: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    feeText,
-                    style: const TextStyle(
-                      color: AppTheme.textMuted,
-                      fontSize: 12,
-                    ),
+                  const SizedBox(height: 6),
+                  CategoryPriceBadges(
+                    category: category,
+                    lang: lang,
+                    compact: true,
+                    visitOnly: true,
                   ),
                 ],
               ),

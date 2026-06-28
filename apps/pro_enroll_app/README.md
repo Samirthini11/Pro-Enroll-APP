@@ -111,73 +111,104 @@ shortcuts are baked in:
 - **Mock job offers** are generated for whatever categories you picked,
   with realistic Pondicherry / Karaikal addresses.
 
-## Firebase phone-OTP setup
+## PHP API + JWT auth (Firebase SMS OTP)
 
-The OTP flow is wired to **Firebase Authentication** (phone provider)
-on Android. iOS and Web fall back to the in-memory mock until their
-Firebase configs are added.
+| Environment | API base URL | When |
+| ----------- | ------------ | ---- |
+| **Local** (default in debug) | `http://localhost:8080` | `flutter run` until VPS is fixed |
+| **Live** (default in release APK) | `http://98.93.105.128/pro_enroll_api` | After server CORS + rewrite deploy |
 
-What is already in the repo:
+**Local API folder:** `D:\krishna\pro_enroll_api`
 
-- `android/app/google-services.json` (project `proenroll-4ff13`, package
-  `pro.enroll`).
-- `lib/firebase_options.dart` (hand-written from the same config; see
-  the docstring at the top of the file).
-- `firebase_core` + `firebase_auth` in `pubspec.yaml`.
-- The Google Services Gradle plugin applied in
-  `android/settings.gradle.kts` and `android/app/build.gradle.kts`.
-- `applicationId` and `namespace` set to `pro.enroll` to match the
-  Firebase Console package.
+**MySQL / phpMyAdmin (live):** [http://98.93.105.128/phpmyadmin/](http://98.93.105.128/phpmyadmin/) — import `database/schema.sql` into `pro_enroll`.
 
-### One-time Firebase Console setup you still need to do
+**VPS deploy / fix 404 & CORS:** see [`pro_enroll_api/DEPLOY_VPS.md`](../../../pro_enroll_api/DEPLOY_VPS.md) (Apache + `composer install` + `.env`).
 
-1. **Enable the Phone provider.** Firebase Console → Build → Authentication
-   → *Sign-in method* tab → enable **Phone**.
-2. **Add your debug SHA-1 fingerprint** to the Android app in
-   Firebase Console → Project settings → Your apps → Android. Without a
-   matching SHA-1 the SafetyNet/Play Integrity check fails and you'll
-   see `app-not-authorized` / `missing-client-identifier`. Get it from:
+1. **Send OTP** — Firebase Phone Auth in the Flutter app sends a 6-digit SMS (project `proenroll-4ff13`).
+2. **Verify OTP** — App verifies with Firebase, then `POST /v1/auth/firebase/session` with `{ "id_token", "mode" }`. Returns `access_token` (JWT) and `next_route`.
+3. **Legacy mail OTP** — `POST /v1/auth/otp/send` + `/verify` still work when `USE_FIREBASE_SMS_OTP=false` in the app.
+4. **Authenticated API** — all `/v1/screens/*` calls use `Authorization: Bearer <jwt>`.
 
-   ```bash
-   cd android
-   ./gradlew signingReport
-   # copy the SHA-1 from the `debug` variant
-   ```
+### Local API (XAMPP)
 
-   After adding the SHA-1, re-download `google-services.json` and
-   replace `apps/pro_enroll_app/android/app/google-services.json`.
-3. **Add a release SHA-1** the same way once you have a release keystore.
-4. **(Recommended) Test numbers.** In *Sign-in method → Phone → Phone
-   numbers for testing*, add a fake number like `+91 9000000001` with a
-   fixed code (e.g. `654321`). You can use this in CI / on devices
-   without sending real SMS.
+```powershell
+cd D:\krishna\pro_enroll_api
+copy .env.example .env
+composer install
+php -S localhost:8080 -t public
+```
 
-### iOS phone-OTP (when you're ready)
+Apply schema:
 
-1. Add an iOS app to the Firebase project with bundle id `pro.enroll`.
-2. Drop the downloaded `GoogleService-Info.plist` into `ios/Runner/`.
-3. Replace the `iOS` branch in `lib/firebase_options.dart`.
-4. Upload an **APNs auth key** in Firebase Console for production push +
-   silent-push phone verification.
+```powershell
+mysql -u root -p < database\schema.sql
+```
 
-### Web phone-OTP (when you're ready)
+Run against **local** API (default in debug — start PHP first):
 
-1. Add a Web app to the Firebase project.
-2. Replace the `kIsWeb` branch in `lib/firebase_options.dart` with the
-   `apiKey` / `authDomain` / `projectId` / etc. from the new config.
-3. Phone auth on web requires a reCAPTCHA verifier — wire one in
-   `FirebaseOtpService.sendOtp` for the web path. We've intentionally
-   skipped this for v1.
+```bash
+flutter run -d chrome
+flutter run -d android
+```
 
-### How the fallback works
+Physical Android on same Wi‑Fi (replace with your PC IP):
 
-- `FirebaseOtpService.isAvailable` reads `Firebase.app()`. If Firebase
-  was initialised successfully in `main.dart`, the auth notifier uses
-  the real Firebase service.
-- If Firebase isn't available on this platform (no config, web demo,
-  init error), the auth notifier falls back to `MockRepository`. Any
-  6-digit OTP works in mock mode, except `000000` which fails so we
-  can test the error UX.
+```bash
+flutter run --dart-define=API_BASE_URL=http://192.168.1.10:8080
+```
+
+### Live API (after server fix is committed & deployed)
+
+Test live from Chrome before APK:
+
+```bash
+flutter run -d chrome --dart-define=USE_LIVE_API=true
+```
+
+Release APK (uses live API automatically):
+
+```bash
+flutter build apk --release
+```
+
+Without `USE_API=true`, the app uses the in-memory mock (any 6-digit OTP except `000000`).
+
+## Runtime configuration (`--dart-define`)
+
+| Flag | Default | Purpose |
+| ---- | ------- | ------- |
+| `GOOGLE_MAPS_API_KEY` | *(empty)* | Optional Static Maps key; without it, OpenStreetMap tiles are used. |
+| `USE_LOCAL_API` | `false` | Force local API even in release builds. |
+| `USE_LIVE_API` | `false` | Force live API in debug (test VPS from Chrome). |
+| `API_BASE_URL` | *(see above)* | Override either environment explicitly. Debug → local; release → live. |
+| `USE_API` | `true` | Set `false` to use in-memory mock instead of real API. |
+| `USE_FIREBASE_SMS_OTP` | `false` | Set `true` for real SMS via Firebase Phone Auth (Android device/emulator). |
+
+### Firebase SMS OTP (real text message)
+
+1. Firebase Console → **Authentication** → **Sign-in method** → enable **Phone**.
+2. Firebase Console → **Project settings** → **Your apps** → Android app `pro.enroll` → add **SHA-1** (debug: run `cd android && ./gradlew signingReport`).
+3. Upload `config/firebase-service-account.json` on the PHP API and run `composer install`.
+4. Run on **Android** (SMS does not work on PHP dev OTP path the same way on web):
+
+```bash
+flutter run -d android --dart-define=USE_API=true --dart-define=USE_FIREBASE_SMS_OTP=true
+```
+
+Without `USE_FIREBASE_SMS_OTP=true`, the API returns a **Dev OTP** on screen (local testing).
+
+Examples:
+
+```bash
+# Local API (debug default)
+flutter run -d chrome
+
+# Live API (test after server deploy)
+flutter run -d chrome --dart-define=USE_LIVE_API=true
+
+# Sharper map tiles (enable Static Maps API in Google Cloud)
+flutter run --dart-define=GOOGLE_MAPS_API_KEY=your_key_here
+```
 
 ## Next steps
 

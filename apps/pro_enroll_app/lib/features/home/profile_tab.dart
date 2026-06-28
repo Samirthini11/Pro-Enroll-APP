@@ -10,12 +10,9 @@ import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../../state/locale_state.dart';
+import '../shared/api_errors.dart';
+import '../shared/book_service_action.dart';
 import '../shared/widgets.dart';
-
-String _initial(String? name) {
-  if (name == null || name.isEmpty) return 'P';
-  return name.trim().substring(0, 1).toUpperCase();
-}
 
 class ProfileTab extends ConsumerWidget {
   const ProfileTab({super.key});
@@ -30,230 +27,188 @@ class ProfileTab extends ConsumerWidget {
       orElse: () => supportedCities.first,
     );
 
-    return ContentMaxWidth(
-      child: ListView(
-        padding: EdgeInsets.fromLTRB(
-            context.pageHPadding, 16, context.pageHPadding, 28),
-        physics: const BouncingScrollPhysics(),
-        children: [
-          Text(l.t('profile.title'),
-              style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 16),
+    return RefreshIndicator(
+      onRefresh: () => ref.read(profileProvider.notifier).loadFromApi(),
+      child: ContentMaxWidth(
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+              context.pageHPadding, 16, context.pageHPadding, 28),
+          physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics()),
+          children: [
+            Text(l.t('profile.title'),
+                style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 16),
 
-          // Pro card.
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-              gradient: const LinearGradient(
-                colors: [AppTheme.brandPrimary, AppTheme.brandPrimaryDark],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+                gradient: const LinearGradient(
+                  colors: [AppTheme.brandPrimary, AppTheme.brandPrimaryDark],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.22),
+                    blurRadius: 22,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.brandPrimary.withValues(alpha: 0.22),
-                  blurRadius: 22,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 32,
-                      backgroundColor: Colors.white,
-                      child: Text(
-                        _initial(profile.fullName),
-                        style: const TextStyle(
-                          color: AppTheme.brandPrimary,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 22,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  profile.fullName ?? 'Pro',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (profile.kycStatus.isVerified) ...[
-                                const SizedBox(width: 6),
-                                const Icon(Icons.verified,
-                                    color: Colors.white, size: 18),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            profile.phoneE164 ?? '',
-                            style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.85),
-                                fontSize: 13),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            '${city.name}, ${city.state}',
-                            style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.85),
-                                fontSize: 13),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    children: [
-                      _stat(
-                          label: l.t('profile.rating'),
-                          value: profile.ratingAvg.toStringAsFixed(1),
-                          icon: Icons.star),
-                      _statDivider(),
-                      _stat(
-                          label: l.t('profile.jobs'),
-                          value: '${profile.jobsCompleted}',
-                          icon: Icons.work_outline),
-                      _statDivider(),
-                      _stat(
-                          label: l.t('profile.proScore'),
-                          value: '${profile.proScore}',
-                          icon: Icons.trending_up),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Skills.
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Skills',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15)),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final s in profile.skills)
-                        Chip(
-                          avatar: Icon(
-                            supportedCategories
-                                .firstWhere(
-                                    (c) => c.code == s.categoryCode,
-                                    orElse: () =>
-                                        supportedCategories.first)
-                                .icon,
-                            size: 16,
-                            color: AppTheme.brandPrimary,
-                          ),
-                          label: Text(
-                            '${supportedCategories.firstWhere((c) => c.code == s.categoryCode, orElse: () => supportedCategories.first).name(lang)} • ${s.experienceYears}y',
-                          ),
-                          backgroundColor: AppTheme.brandPrimaryLight,
-                          side: const BorderSide(
-                              color: Color(0xFFDBE5FA)),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Icon(Icons.radar,
-                          color: AppTheme.textMuted, size: 18),
-                      const SizedBox(width: 6),
-                      Text('${profile.workRadiusKm} km work radius',
-                          style: const TextStyle(color: AppTheme.textMuted)),
-                      const Spacer(),
-                      Text(
-                        formatPaise(profile.visitFeePaise),
-                        style: const TextStyle(
-                            color: AppTheme.brandPrimary,
-                            fontWeight: FontWeight.w800),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    profile.fullName ?? 'Pro',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (profile.kycStatus.isVerified) ...[
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.verified,
+                                      color: Colors.white, size: 18),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              profile.phoneE164 ?? '',
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                  fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              '${city.name}, ${city.state}',
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                  fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
-                      const Text(
-                        ' visit',
-                        style: TextStyle(color: AppTheme.textMuted),
+                      const SizedBox(width: 12),
+                      BookServiceAvatar(
+                        name: profile.fullName,
+                        onTap: () => switchToCustomerMode(context, ref),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        _stat(
+                            label: l.t('profile.rating'),
+                            value: profile.ratingCount > 0
+                                ? profile.ratingAvg.toStringAsFixed(1)
+                                : '—',
+                            icon: Icons.star),
+                        _statDivider(),
+                        _stat(
+                            label: l.t('profile.jobs'),
+                            value: '${profile.jobsCompleted}',
+                            icon: Icons.work_outline),
+                        _statDivider(),
+                        _stat(
+                            label: l.t('profile.proScore'),
+                            value: '${profile.proScore}',
+                            icon: Icons.trending_up),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 16),
 
-          InfoCard(
-            icon: Icons.account_balance,
-            title: l.t('profile.bank.title'),
-            subtitle:
-                profile.upiId ?? profile.bankAccountNo ?? l.t('profile.bank.empty'),
-            onTap: () => _showBankSheet(context, ref),
-          ),
-          const SizedBox(height: 10),
-          InfoCard(
-            icon: Icons.translate,
-            title: l.t('profile.language'),
-            subtitle: lang == 'ta' ? 'தமிழ்' : 'English',
-            onTap: () {
-              ref
-                  .read(localeProvider.notifier)
-                  .setLanguage(lang == 'ta' ? 'en' : 'ta');
-            },
-          ),
-          const SizedBox(height: 10),
-          InfoCard(
-            icon: Icons.workspace_premium,
-            title: 'Subscription',
-            subtitle: 'Free plan • upgrade to ₹99/mo for unlimited leads',
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Coming soon')),
+            const _MyServicesCard(),
+            const SizedBox(height: 10),
+            InfoCard(
+              icon: Icons.radar,
+              title: 'Work area & distance',
+              subtitle: '${city.name} · ${profile.workRadiusKm} km radius',
+              onTap: () => context.push(Routes.editWorkArea),
             ),
-          ),
-          const SizedBox(height: 10),
-          InfoCard(
-            icon: Icons.logout,
-            title: l.t('profile.signout'),
-            danger: true,
-            onTap: () {
-              ref.read(authProvider.notifier).signOut();
-              context.go(Routes.authLanding);
-            },
-          ),
-        ],
+            const SizedBox(height: 10),
+            InfoCard(
+              icon: Icons.currency_rupee,
+              title: 'Visit fee',
+              subtitle: '${formatPaise(profile.visitFeePaise)} per visit',
+              onTap: () => context.push(Routes.editVisitFee),
+            ),
+            const SizedBox(height: 14),
+
+            InfoCard(
+              icon: Icons.account_balance,
+              title: l.t('profile.bank.title'),
+              subtitle:
+                  profile.upiId ?? profile.bankAccountNo ?? l.t('profile.bank.empty'),
+              onTap: () => _showBankSheet(context, ref),
+            ),
+            const SizedBox(height: 10),
+            InfoCard(
+              icon: Icons.translate,
+              title: l.t('profile.language'),
+              subtitle: lang == 'ta' ? 'தமிழ்' : 'English',
+              onTap: () {
+                ref
+                    .read(localeProvider.notifier)
+                    .setLanguage(lang == 'ta' ? 'en' : 'ta');
+              },
+            ),
+            const SizedBox(height: 10),
+            InfoCard(
+              icon: Icons.workspace_premium,
+              title: 'Subscription',
+              subtitle: 'Free plan • upgrade to ₹99/mo for unlimited leads',
+              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Coming soon')),
+              ),
+            ),
+            const SizedBox(height: 10),
+            InfoCard(
+              icon: Icons.home_repair_service,
+              title: l.t('profile.bookService'),
+              subtitle: l.t('profile.bookService.subtitle'),
+              onTap: () => switchToCustomerMode(context, ref),
+            ),
+            const SizedBox(height: 10),
+            InfoCard(
+              icon: Icons.logout,
+              title: l.t('profile.signout'),
+              danger: true,
+              onTap: () async {
+                await ref.read(authProvider.notifier).signOut();
+                if (context.mounted) context.go(Routes.authLanding);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -341,6 +296,185 @@ class ProfileTab extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _MyServicesCard extends ConsumerStatefulWidget {
+  const _MyServicesCard();
+
+  @override
+  ConsumerState<_MyServicesCard> createState() => _MyServicesCardState();
+}
+
+class _MyServicesCardState extends ConsumerState<_MyServicesCard> {
+  Map<String, int> _years = {};
+  bool _busy = false;
+  bool _initialized = false;
+
+  void _ensureInitialized(List<ProSkill> skills) {
+    if (_initialized || skills.isEmpty) return;
+    _years = {for (final s in skills) s.categoryCode: s.experienceYears};
+    _initialized = true;
+  }
+
+  bool get _dirty {
+    final skills = ref.read(profileProvider).skills;
+    if (skills.length != _years.length) return true;
+    for (final s in skills) {
+      if (_years[s.categoryCode] != s.experienceYears) return true;
+    }
+    return false;
+  }
+
+  Future<void> _save() async {
+    if (_years.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    final codes = _years.keys.toList();
+    final skills = codes
+        .map(
+          (code) => ProSkill(
+            categoryCode: code,
+            experienceYears: _years[code] ?? 1,
+            isPrimary: codes.first == code,
+          ),
+        )
+        .toList();
+    try {
+      await ref.read(profileProvider.notifier).persistCategories(
+            codes,
+            experienceByCategory: _years,
+          );
+      ref.read(profileProvider.notifier).setSkills(skills);
+      await ref.read(profileProvider.notifier).loadFromApi();
+      if (mounted) {
+        setState(() => _initialized = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Services updated'),
+            backgroundColor: AppTheme.brandSuccess,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showApiError(context, e, fallback: 'Could not update services.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = ref.watch(localeProvider).languageCode;
+    final skills = ref.watch(profileProvider).skills;
+    _ensureInitialized(skills);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('My services',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15)),
+                ),
+                TextButton.icon(
+                  onPressed: () => context.push(Routes.editSkills),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Edit services'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Tap +/− to change years of experience, then save.',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            if (skills.isEmpty)
+              const Text('No services yet. Tap Edit services to add.',
+                  style: TextStyle(color: AppTheme.textMuted))
+            else
+              for (final s in skills)
+                _ServiceExperienceRow(
+                  categoryCode: s.categoryCode,
+                  lang: lang,
+                  years: _years[s.categoryCode] ?? s.experienceYears,
+                  onChanged: (y) => setState(() => _years[s.categoryCode] = y),
+                ),
+            if (_dirty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _busy ? null : _save,
+                  child: _busy
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save experience'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ServiceExperienceRow extends StatelessWidget {
+  const _ServiceExperienceRow({
+    required this.categoryCode,
+    required this.lang,
+    required this.years,
+    required this.onChanged,
+  });
+
+  final String categoryCode;
+  final String lang;
+  final int years;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final cat = supportedCategories.firstWhere(
+      (c) => c.code == categoryCode,
+      orElse: () => supportedCategories.first,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(cat.icon, color: AppTheme.brandPrimary, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(cat.name(lang),
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+          ),
+          IconButton(
+            onPressed: years <= 0 ? null : () => onChanged(years - 1),
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+          Text('$years yr${years == 1 ? '' : 's'}',
+              style: const TextStyle(fontWeight: FontWeight.w800)),
+          IconButton(
+            onPressed: years >= 50 ? null : () => onChanged(years + 1),
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+        ],
+      ),
     );
   }
 }

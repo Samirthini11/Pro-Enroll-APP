@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,7 +7,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/i18n.dart';
 import '../../core/theme.dart';
-import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../shared/widgets.dart';
@@ -36,8 +37,11 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
     if (!_isValid || _busy) return;
     setState(() => _busy = true);
     final phone = '+91${_controller.text.trim()}';
-    await ref.read(authProvider.notifier).startPhone(phone);
-    ref.read(profileProvider.notifier).setPhone(phone);
+    final authNotifier = ref.read(authProvider.notifier);
+    await authNotifier.startPhone(
+      phone,
+      isSignIn: widget.flow.isSignIn,
+    );
     if (!mounted) return;
     setState(() => _busy = false);
 
@@ -48,28 +52,23 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
       );
       return;
     }
-    if (auth.autoVerified) {
-      // Android instant verification — skip OTP entry and route as if
-      // the OTP screen had completed.
-      _afterAuthSuccess();
+    if (auth.otpRequestId == null || auth.otpRequestId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not send OTP. Check API connection and try again.'),
+        ),
+      );
       return;
     }
-    context.push(Routes.otp, extra: widget.flow);
-  }
 
-  void _afterAuthSuccess() {
-    // Mirror the OTP screen's branching so instant verification lands
-    // the user in the same place they'd reach after typing the OTP.
-    if (widget.flow.isSignIn) {
-      final pn = ref.read(profileProvider.notifier);
-      pn.setName(ref.read(profileProvider).fullName ?? 'Pro user');
-      pn.setKyc(KycStatus.verified);
-      pn.seedDemoStats();
-      pn.setAvailability(true);
-      context.go(Routes.home);
-    } else {
-      context.go(Routes.onboardCategory);
-    }
+    ref.read(profileProvider.notifier).setPhone(phone);
+    if (!mounted) return;
+
+    final flow = widget.flow;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.push(Routes.otp, extra: flow);
+    });
   }
 
   @override
@@ -101,13 +100,16 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(10),
             ],
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) {
+              ref.read(authProvider.notifier).clearError();
+              setState(() {});
+            },
             style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.5,
             ),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               prefixIcon: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 14),
                 child: _CountryPrefix(),
@@ -115,6 +117,8 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
               prefixIconConstraints:
                   BoxConstraints(minWidth: 80, minHeight: 0),
               hintText: '98xxxxxxxx',
+              errorText: ref.watch(authProvider).errorMessage,
+              errorMaxLines: 4,
             ),
           ),
           const SizedBox(height: 16),

@@ -81,8 +81,12 @@ extension ResponsiveContext on BuildContext {
 
   /// A capped maximum width for forms / content on wide screens (foldables,
   /// small tablets, web). On narrow phones this just returns the full width.
-  double get contentMaxWidth =>
-      screenW > 720 ? 560 : screenW;
+  /// On very wide viewports (desktop browser) caps at a phone-like width
+  /// so the app feels like a mobile app.
+  double get contentMaxWidth {
+    if (screenW > 720) return 480;
+    return screenW;
+  }
 
   bool get isCompactHeight => screenH < 680;
 

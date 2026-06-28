@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
+import '../../data/models.dart';
 import '../../routing/router.dart';
+import '../../state/app_state.dart';
 import '../../state/locale_state.dart';
 import 'auth_flow.dart';
 
@@ -66,19 +68,43 @@ class AuthLandingScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     FilledButton(
-                      onPressed: () => context.push(
-                        Routes.phone,
-                        extra: const AuthFlow(mode: AuthMode.signIn),
-                      ),
-                      child: const Text('Sign in'),
+                      onPressed: () {
+                        ref.read(roleProvider.notifier).state = AppRole.professional;
+                        ref.read(authProvider.notifier).beginSignIn();
+                        context.push(
+                          Routes.phone,
+                          extra: const AuthFlow(mode: AuthMode.signIn, role: AppRole.professional),
+                        );
+                      },
+                      child: const Text('Sign in as Pro'),
                     ),
                     const SizedBox(height: 10),
                     OutlinedButton(
-                      onPressed: () => context.push(
-                        Routes.phone,
-                        extra: const AuthFlow(mode: AuthMode.signUp),
-                      ),
-                      child: const Text('Create account · Enroll as a Pro'),
+                      onPressed: () async {
+                        ref.read(roleProvider.notifier).state = AppRole.professional;
+                        await ref
+                            .read(authProvider.notifier)
+                            .beginSignUp();
+                        if (context.mounted) {
+                          context.push(
+                            Routes.phone,
+                            extra: const AuthFlow(mode: AuthMode.signUp, role: AppRole.professional),
+                          );
+                        }
+                      },
+                      child: const Text('Enroll as a Professional'),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton.tonal(
+                      onPressed: () {
+                        ref.read(roleProvider.notifier).state = AppRole.customer;
+                        ref.read(authProvider.notifier).beginSignIn();
+                        context.push(
+                          Routes.phone,
+                          extra: const AuthFlow(mode: AuthMode.signIn, role: AppRole.customer),
+                        );
+                      },
+                      child: const Text('I need a service · Customer'),
                     ),
                     const SizedBox(height: 14),
                     _Footer(currentLang: ref.watch(localeProvider).languageCode),
@@ -142,7 +168,7 @@ class _BrandHero extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text(
-            'Welcome to Pro-Enroll',
+            'Welcome to QuickFix',
             style: TextStyle(
               color: Colors.white,
               fontSize: 24,
@@ -152,7 +178,7 @@ class _BrandHero extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Local skills. Verified hands. Daily payouts.',
+            'Book verified local pros. Or enroll as one.',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.88),
               fontSize: 14,

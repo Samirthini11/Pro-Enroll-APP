@@ -71,12 +71,36 @@ void main() {
     await _typePhone(tester, '9812345678');
     await _tapPrimary(tester); // Send OTP
 
-    await _typeOtp(tester, '654321');
+    await _typeOtp(tester, '123456');
     await _tapPrimary(tester); // Verify OTP → /onboard/category
 
     // We should be on the category-select screen; the FilledButton "Next"
     // is initially disabled until a chip is tapped.
     expect(find.byType(FilledButton), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('create-account flow shows error when OTP does not match',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const ProviderScope(child: ProEnrollApp()));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    await tester.tap(find.byType(OutlinedButton).first);
+    await tester.pumpAndSettle();
+
+    await _typePhone(tester, '9812345678');
+    await _tapPrimary(tester);
+
+    await _typeOtp(tester, '000000');
+    await _tapPrimary(tester);
+
+    expect(find.textContaining('Incorrect OTP'), findsWidgets);
+    expect(find.byType(NavigationBar), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
