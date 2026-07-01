@@ -12,6 +12,7 @@ The product is delivered as two Flutter mobile apps that share one backend:
 | ------------------ | ------------------------------ | ----------------------------------------------------------------------- |
 | **Pro‑Enroll App** | Professionals / Service Pros   | Self‑enrollment, KYC verification, profile, location, jobs, earnings.   |
 | **Pro‑User App**   | Customers / End users          | Search & filter professionals nearby, book a visit, pay, rate & review. |
+| **Admin Approval App** | Internal staff             | KYC approval, shop photo & certificate verification for pros.             |
 
 > Tag‑line: **“Local skills. Verified hands. One tap away.”**
 
