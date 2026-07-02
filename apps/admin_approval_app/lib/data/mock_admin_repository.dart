@@ -1,14 +1,12 @@
 import 'dart:async';
 
+import 'admin_repository_contract.dart';
 import 'models.dart';
 
 /// In-memory mock backend for the Admin Approval app.
 ///
-/// Mirrors admin endpoints from `docs/06-api-specification.md`:
-///   GET  /v1/admin/kyc?status=in_review
-///   POST /v1/admin/kyc/:pro_id/approve
-///   POST /v1/admin/kyc/:pro_id/reject
-class MockAdminRepository {
+/// Used when `USE_API=false`. Mirrors admin endpoints from `pro_enroll_api`.
+class MockAdminRepository implements AdminRepositoryContract {
   MockAdminRepository() {
     _seedData();
   }
@@ -38,6 +36,9 @@ class MockAdminRepository {
     await _delay(200);
     _session = null;
   }
+
+  @override
+  Future<void> restoreSession() async {}
 
   Future<AdminDashboardStats> fetchDashboardStats() async {
     await _delay();

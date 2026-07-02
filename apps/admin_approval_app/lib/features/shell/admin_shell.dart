@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
+import '../../data/models.dart';
 import '../../state/admin_state.dart';
 import '../dashboard/dashboard_tab.dart';
 import '../documents/document_queue_screen.dart';

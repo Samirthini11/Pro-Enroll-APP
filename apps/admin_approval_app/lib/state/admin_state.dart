@@ -1,10 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/mock_admin_repository.dart';
+import '../data/admin_token_service.dart';
+import '../data/app_admin_repository.dart';
+import '../data/admin_repository_contract.dart';
 import '../data/models.dart';
 
-final repositoryProvider = Provider<MockAdminRepository>((ref) {
-  return MockAdminRepository();
+final adminTokenServiceProvider =
+    Provider<AdminTokenService>((ref) => AdminTokenService());
+
+final repositoryProvider = Provider<AdminRepositoryContract>((ref) {
+  final tokens = ref.watch(adminTokenServiceProvider);
+  return AppAdminRepository(tokens: tokens);
 });
 
 final authProvider =
@@ -14,11 +20,16 @@ final authProvider =
 
 class AuthNotifier extends StateNotifier<AsyncValue<AdminUser?>> {
   AuthNotifier(this._repo) : super(const AsyncData(null)) {
+    _restore();
+  }
+
+  final AdminRepositoryContract _repo;
+
+  Future<void> _restore() async {
+    await _repo.restoreSession();
     final existing = _repo.currentAdmin;
     if (existing != null) state = AsyncData(existing);
   }
-
-  final MockAdminRepository _repo;
 
   Future<bool> login(String email, String password) async {
     state = const AsyncLoading();

@@ -117,7 +117,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'Demo: any email + password (4+ chars)',
+                    'API: admin@proenroll.in / admin123 (or mock with USE_API=false)',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.textFaint, fontSize: 12),
                   ),
