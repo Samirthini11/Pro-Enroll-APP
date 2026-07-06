@@ -52,6 +52,8 @@ class MockAdminRepository implements AdminRepositoryContract {
       approvedToday: 7,
       rejectedToday: 2,
       totalVerifiedPros: 1482,
+      totalRegisteredPros: 1520,
+      totalRegisteredCustomers: 3840,
     );
   }
 

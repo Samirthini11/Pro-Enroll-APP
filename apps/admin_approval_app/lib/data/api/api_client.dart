@@ -58,13 +58,20 @@ class ApiClient {
     try {
       response = await _send(method, uri, headers, body);
       response = await _maybeRetryAfterChallenge(method, uri, headers, body, response);
-    } on http.ClientException {
+    } on http.ClientException catch (e) {
       throw ApiException(
-        'Cannot reach API at $_base',
+        'Cannot reach API at $_base. Check your internet connection.',
         code: 'network',
       );
-    } catch (e) {
+    } on Exception catch (e) {
       if (e is ApiException) rethrow;
+      final msg = e.toString();
+      if (msg.contains('TimeoutException') || msg.contains('timed out')) {
+        throw ApiException(
+          'API request timed out. Check network and try again.',
+          code: 'timeout',
+        );
+      }
       throw ApiException('Network error: $e', code: 'network');
     }
 
@@ -72,6 +79,13 @@ class ApiClient {
     try {
       decoded = jsonDecode(response.body) as Map<String, dynamic>;
     } catch (_) {
+      if (_ifreeSolver.isChallengePage(response)) {
+        throw ApiException(
+          'Hosting blocked the request (bot challenge). Try again in a moment.',
+          statusCode: response.statusCode,
+          code: 'hosting_challenge',
+        );
+      }
       throw ApiException(
         'Invalid API response (${response.statusCode}) from $_base',
         statusCode: response.statusCode,
@@ -102,10 +116,19 @@ class ApiClient {
     http.Response response,
   ) async {
     if (!_ifreeSolver.isChallengePage(response)) return response;
+
     final solved = await _ifreeSolver.solveFromResponse(response);
     if (!solved) return response;
+
     _ifreeSolver.applyToHeaders(headers);
-    return _send(method, uri, headers, body);
+    var retried = await _send(method, uri, headers, body);
+    if (_ifreeSolver.isChallengePage(retried)) {
+      final withFlag = uri.replace(
+        queryParameters: {...uri.queryParameters, 'i': '1'},
+      );
+      retried = await _send(method, withFlag, headers, body);
+    }
+    return retried;
   }
 
   Future<http.Response> _send(

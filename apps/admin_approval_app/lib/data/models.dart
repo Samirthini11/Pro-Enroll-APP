@@ -229,6 +229,8 @@ class AdminDashboardStats {
     required this.approvedToday,
     required this.rejectedToday,
     required this.totalVerifiedPros,
+    required this.totalRegisteredPros,
+    required this.totalRegisteredCustomers,
   });
 
   final int kycPending;
@@ -236,4 +238,6 @@ class AdminDashboardStats {
   final int approvedToday;
   final int rejectedToday;
   final int totalVerifiedPros;
+  final int totalRegisteredPros;
+  final int totalRegisteredCustomers;
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/admin_token_service.dart';
 import '../data/app_admin_repository.dart';
 import '../data/admin_repository_contract.dart';
+import '../data/api/api_exception.dart';
 import '../data/models.dart';
 
 final adminTokenServiceProvider =
@@ -33,13 +34,18 @@ class AuthNotifier extends StateNotifier<AsyncValue<AdminUser?>> {
 
   Future<bool> login(String email, String password) async {
     state = const AsyncLoading();
-    final ok = await _repo.login(email: email, password: password);
-    if (ok) {
-      state = AsyncData(_repo.currentAdmin);
-      return true;
+    try {
+      final ok = await _repo.login(email: email, password: password);
+      if (ok) {
+        state = AsyncData(_repo.currentAdmin);
+        return true;
+      }
+      state = const AsyncData(null);
+      return false;
+    } on ApiException catch (e, st) {
+      state = AsyncError(e, st);
+      return false;
     }
-    state = const AsyncData(null);
-    return false;
   }
 
   Future<void> logout() async {

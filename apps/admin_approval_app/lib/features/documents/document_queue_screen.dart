@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/api_error.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
@@ -113,7 +114,12 @@ class _DocumentQueueScreenState extends ConsumerState<DocumentQueueScreen> {
         Expanded(
           child: queueAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
+            error: (e, _) => Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(apiErrorMessage(e, fallback: 'Could not load documents')),
+              ),
+            ),
             data: (items) {
               if (items.isEmpty) {
                 return const Center(

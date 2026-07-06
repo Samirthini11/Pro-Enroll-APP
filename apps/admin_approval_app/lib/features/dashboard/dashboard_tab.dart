@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api_error.dart';
 import '../../core/theme.dart';
 import '../../state/admin_state.dart';
 import '../shared/widgets.dart';
@@ -14,12 +15,44 @@ class DashboardTab extends ConsumerWidget {
 
     return statsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(apiErrorMessage(e, fallback: 'Could not load dashboard')),
+        ),
+      ),
       data: (stats) => RefreshIndicator(
         onRefresh: () async => ref.invalidate(dashboardStatsProvider),
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            const SectionTitle(
+              'Platform registrations',
+              subtitle: 'Total accounts in Pro-Enroll',
+            ),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 1.35,
+              children: [
+                StatCard(
+                  label: 'Professionals',
+                  value: '${stats.totalRegisteredPros}',
+                  icon: Icons.engineering_outlined,
+                  color: AppTheme.brandPrimary,
+                ),
+                StatCard(
+                  label: 'Customers',
+                  value: '${stats.totalRegisteredCustomers}',
+                  icon: Icons.person_outline,
+                  color: AppTheme.brandSuccess,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
             const SectionTitle(
               'Approval Overview',
               subtitle: 'Pro-Enroll user verification pipeline',

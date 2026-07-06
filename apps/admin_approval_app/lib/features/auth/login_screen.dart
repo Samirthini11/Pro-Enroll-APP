@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
+import '../../data/api/api_exception.dart';
 import '../../routing/router.dart';
 import '../../state/admin_state.dart';
 import '../shared/widgets.dart';
@@ -37,8 +38,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (ok) {
       context.go(Routes.home);
     } else {
+      final authState = ref.read(authProvider);
+      final message = authState.error is ApiException
+          ? (authState.error as ApiException).message
+          : 'Invalid email or password';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid email or password')),
+        SnackBar(content: Text(message)),
       );
     }
   }

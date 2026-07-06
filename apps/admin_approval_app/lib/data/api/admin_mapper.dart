@@ -44,6 +44,9 @@ AdminDashboardStats dashboardStatsFromApi(Map<String, dynamic> map) {
     approvedToday: (map['approved_today'] as num?)?.toInt() ?? 0,
     rejectedToday: (map['rejected_today'] as num?)?.toInt() ?? 0,
     totalVerifiedPros: (map['total_verified_pros'] as num?)?.toInt() ?? 0,
+    totalRegisteredPros: (map['total_registered_pros'] as num?)?.toInt() ?? 0,
+    totalRegisteredCustomers:
+        (map['total_registered_customers'] as num?)?.toInt() ?? 0,
   );
 }
 
