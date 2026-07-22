@@ -37,6 +37,15 @@ CityRef cityById(int id) => supportedCities.firstWhere(
       orElse: () => supportedCities.first,
     );
 
+/// Professional visiting charge slider limits (₹).
+/// Max ₹500 visit fee (slider / API clamp).
+const visitFeeMinRupees = 50;
+const visitFeeMaxRupees = 500;
+const visitFeeStepRupees = 25;
+
+int clampVisitFeeRupees(int rupees) =>
+    rupees.clamp(visitFeeMinRupees, visitFeeMaxRupees);
+
 class CategoryRef {
   const CategoryRef({
     required this.code,
@@ -67,7 +76,7 @@ class CategoryRef {
 
   String visitFeeLabel(String lang) => lang == 'ta'
       ? 'வருகை ₹$defaultVisitFee'
-      : 'Visit ₹$defaultVisitFee';
+      : 'Visiting ₹$defaultVisitFee';
 
   factory CategoryRef.fromApi(Map<String, dynamic> map) {
     final visitPaise =
@@ -79,8 +88,8 @@ class CategoryRef {
       nameEn: map['name_en'] as String? ?? map['code'] as String? ?? '',
       nameTa: map['name_ta'] as String? ?? map['name_en'] as String? ?? '',
       icon: categoryIconForKey(iconKey),
-      basePrice: basePaise ~/ 100,
-      defaultVisitFee: visitPaise ~/ 100,
+      basePrice: clampVisitFeeRupees(basePaise ~/ 100),
+      defaultVisitFee: clampVisitFeeRupees(visitPaise ~/ 100),
     );
   }
 }
@@ -151,8 +160,8 @@ const supportedCategories = <CategoryRef>[
     nameEn: 'Car Mechanic',
     nameTa: 'கார் மெக்கானிக்',
     icon: Icons.directions_car,
-    basePrice: 250,
-    defaultVisitFee: 250,
+    basePrice: 200,
+    defaultVisitFee: 200,
   ),
   CategoryRef(
     code: 'bike',

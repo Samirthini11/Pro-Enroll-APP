@@ -27,6 +27,7 @@ class _ProDetailScreenState extends ConsumerState<ProDetailScreen> {
   void initState() {
     super.initState();
     _load();
+    Future.microtask(() => ref.read(customerProvider.notifier).loadBookings());
   }
 
   Future<void> _load() async {
@@ -78,27 +79,46 @@ class _ProDetailScreenState extends ConsumerState<ProDetailScreen> {
     final phoneMasked = d['phone_masked'] as String?;
     final skills = d['skills'] as List? ?? [];
     final proId = parseRouteInt(widget.params['pro_id']);
-    final catCode = widget.params['category_code'] as String?;
+    final catCode = widget.params['category_code'] as String? ??
+        (skills.isNotEmpty ? skills[0]['category_code'] as String? : 'ac');
     final isCompact = context.deviceSize == DeviceSize.xs;
+    final bookings = ref.watch(customerProvider).bookings;
+    final activeBooking = findActiveBookingWithPro(
+      bookings,
+      professionalId: proId,
+      categoryCode: catCode ?? 'ac',
+    );
+    final canBook = isAvailable && activeBooking == null;
 
     return AppPage(
       title: name,
       bottom: SizedBox(
         width: double.infinity,
         child: FilledButton.icon(
-          onPressed: isAvailable
+          onPressed: canBook
               ? () => context.push(Routes.customerBook, extra: {
                     'pro_id': proId,
                     'pro_name': name,
-                    'category_code': catCode ?? (skills.isNotEmpty ? skills[0]['category_code'] : 'ac'),
+                    'category_code': catCode,
                     'visit_fee_paise': visitFeePaise,
                     'city_id': cityId,
+                    'work_radius_km': (d['work_radius_km'] as num?)?.toInt() ?? 5,
+                    if (d['home_lat'] != null) 'pro_lat': d['home_lat'],
+                    if (d['home_lng'] != null) 'pro_lng': d['home_lng'],
                     if (widget.params['lat'] != null) 'lat': widget.params['lat'],
                     if (widget.params['lng'] != null) 'lng': widget.params['lng'],
                   })
-              : null,
-          icon: const Icon(Icons.calendar_today),
-          label: Text(isAvailable ? 'Book Now · ${formatPaise(visitFeePaise)}' : 'Currently Unavailable'),
+              : activeBooking != null
+                  ? () => context.push(Routes.customerBookingDetail, extra: activeBooking.id)
+                  : null,
+          icon: Icon(activeBooking != null ? Icons.event_note : Icons.calendar_today),
+          label: Text(
+            activeBooking != null
+                ? 'Booking in progress'
+                : isAvailable
+                    ? 'Book Now · ${formatPaise(visitFeePaise)}'
+                    : 'Currently Unavailable',
+          ),
         ),
       ),
       child: RefreshIndicator(
@@ -158,7 +178,7 @@ class _ProDetailScreenState extends ConsumerState<ProDetailScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.star, color: Colors.amber.shade700, size: 18),
+                      Icon(Icons.star, color: AppTheme.brandAccentDark, size: 18),
                       const SizedBox(width: 3),
                       Text('${ratingAvg.toStringAsFixed(1)} ($ratingCount ratings)',
                           style: const TextStyle(fontSize: 14)),
@@ -188,7 +208,14 @@ class _ProDetailScreenState extends ConsumerState<ProDetailScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            if (isAvailable)
+            if (activeBooking != null)
+              TrustBanner(
+                text:
+                    'You already have an active ${activeBooking.displayStatusLabel.toLowerCase()} booking with $name for this service.',
+                icon: Icons.info_outline,
+                tone: TrustBannerTone.warning,
+              ),
+            if (activeBooking == null && isAvailable)
               const TrustBanner(
                 text: 'Verified professional · Pay only after work is done',
                 icon: Icons.verified,

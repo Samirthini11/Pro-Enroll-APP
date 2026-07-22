@@ -50,6 +50,9 @@ class _CustomerHomeScreenState extends ConsumerState<CustomerHomeScreen> {
     Future.microtask(() async {
       ref.read(customerProvider.notifier).loadProfile();
       await ref.read(pushNotificationServiceProvider).syncTokenWithServer();
+      await ref.read(pushNotificationServiceProvider).markReadyAndFlush(
+            authenticated: true,
+          );
       await _detectLocationAndSearch();
     });
   }
@@ -453,7 +456,7 @@ class _NearbyProCard extends StatelessWidget {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.star, size: 12, color: Colors.amber.shade700),
+                            Icon(Icons.star, size: 12, color: AppTheme.brandAccentDark),
                             const SizedBox(width: 2),
                             Text('${pro.ratingAvg.toStringAsFixed(1)}',
                                 style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
@@ -718,8 +721,8 @@ class _ProfileTab extends ConsumerWidget {
               const SizedBox(height: 8),
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.logout, color: Colors.red),
-                  title: const Text('Sign Out', style: TextStyle(color: Colors.red, fontSize: 14)),
+                  leading: const Icon(Icons.logout, color: AppTheme.brandDanger),
+                  title: const Text('Sign Out', style: TextStyle(color: AppTheme.brandDanger, fontSize: 14)),
                   onTap: () async {
                     await ref.read(authProvider.notifier).signOut();
                     if (context.mounted) context.go(Routes.authLanding);

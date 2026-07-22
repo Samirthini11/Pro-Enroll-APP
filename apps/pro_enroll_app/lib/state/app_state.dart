@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -434,7 +436,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
     }
 
-    router.go(path);
+    unawaited(navigateRespectingPush(router, path));
   }
 
   void navigateAfterCustomerAuth(GoRouter router) {
@@ -443,10 +445,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
 
     final profile = _ref.read(customerProvider).profile;
-    router.go(CustomerRouteResolver.resolve(
+    final path = CustomerRouteResolver.resolve(
       profile: profile,
       serverNextRoute: state.nextRoute,
-    ));
+    );
+    unawaited(navigateRespectingPush(router, path));
   }
 
   /// After session restore — where the user should land.
@@ -465,6 +468,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
       serverNextRoute: state.nextRoute,
       isSignIn: true,
     );
+  }
+
+  /// Open a notification deep link when queued; otherwise [defaultRoute].
+  Future<void> navigateRespectingPush(
+    GoRouter router,
+    String defaultRoute,
+  ) async {
+    if (!state.isAuthenticated || state.otpErrorCode == 'invalid_otp') {
+      return;
+    }
+
+    final push = _ref.read(pushNotificationServiceProvider);
+    await push.init();
+    if (PushNotificationService.hasPending) {
+      final navigated = await push.markReadyAndFlush(authenticated: true);
+      if (navigated) return;
+    }
+    router.go(defaultRoute);
   }
 
 
@@ -509,6 +530,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> signOut() async {
     try {
+      // Go offline before logout so customer search drops this pro immediately.
+      if (_ref.read(roleProvider) == AppRole.professional &&
+          _ref.read(profileProvider).isAvailable) {
+        await _ref.read(profileProvider.notifier).setAvailability(false);
+      }
+    } catch (_) {
+      // Still proceed with logout.
+    }
+    try {
       await (_firebasePhoneAuth ?? FirebasePhoneAuthService()).signOut();
     } catch (_) {
       // Local JWT logout still proceeds if Firebase is unavailable.
@@ -544,6 +574,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
           _ref.read(profileProvider.notifier).applyFromServer(profile);
         }
       } else if (target == AppRole.customer) {
+        // Switching away from pro mode — hide from customer search.
+        if (_ref.read(profileProvider).isAvailable) {
+          try {
+            await _ref.read(profileProvider.notifier).setAvailability(false);
+          } catch (_) {}
+        }
         await _ref.read(customerProvider.notifier).loadProfile();
       }
       await _syncPushToken();
@@ -634,11 +670,25 @@ class ProfileNotifier extends StateNotifier<ProProfile> {
 
 
   Future<void> setAvailability(bool on) async {
-
+    final previous = state.isAvailable;
     state = state.copyWith(isAvailable: on);
+    try {
+      await _repo.updateAvailability(on);
+      await loadFromApi();
+    } catch (e) {
+      state = state.copyWith(isAvailable: previous);
+      rethrow;
+    }
+  }
 
-    await _repo.updateAvailability(on);
-
+  /// Soft ping so customer search keeps listing this pro.
+  Future<void> pingPresence() async {
+    if (!state.isAvailable) return;
+    try {
+      await _repo.pingPresence();
+    } catch (e) {
+      debugPrint('pingPresence: $e');
+    }
   }
 
 
@@ -748,139 +798,111 @@ final profileProvider =
 /// ─── Jobs ──────────────────────────────────────────────────────────────
 
 class JobsState {
-
   const JobsState({this.offers = const [], this.activeJob, this.loading = false});
 
   final List<JobOffer> offers;
-
   final ActiveJob? activeJob;
-
   final bool loading;
 
-
-
   JobsState copyWith({
-
     List<JobOffer>? offers,
-
-    ActiveJob? activeJob,
-
+    Object? activeJob = _unset,
     bool? loading,
-
     bool clearActive = false,
+  }) {
+    final ActiveJob? nextActive;
+    if (clearActive) {
+      nextActive = null;
+    } else if (identical(activeJob, _unset)) {
+      nextActive = this.activeJob;
+    } else {
+      nextActive = activeJob as ActiveJob?;
+    }
 
-  }) =>
-
-      JobsState(
-
-        offers: offers ?? this.offers,
-
-        activeJob: clearActive ? null : (activeJob ?? this.activeJob),
-
-        loading: loading ?? this.loading,
-
-      );
-
+    return JobsState(
+      offers: offers ?? this.offers,
+      activeJob: nextActive,
+      loading: loading ?? this.loading,
+    );
+  }
 }
 
-
+const Object _unset = Object();
 
 class JobsNotifier extends StateNotifier<JobsState> {
-
   JobsNotifier(this._repo) : super(const JobsState());
 
-
-
   final ProRepository _repo;
-
-
 
   Future<void> refresh(List<String> categoryCodes) async {
     state = state.copyWith(loading: true);
     try {
       final offers = await _repo.fetchOffers(categoryCodes);
       final active = await _repo.fetchActiveJob();
-      state = state.copyWith(offers: offers, activeJob: active, loading: false);
+      // Always replace activeJob (null means work finished / payment due — clear card).
+      state = state.copyWith(
+        offers: offers,
+        activeJob: active,
+        loading: false,
+        clearActive: active == null,
+      );
     } catch (e) {
       debugPrint('fetchOffers error: $e');
       state = state.copyWith(offers: const [], loading: false);
     }
   }
 
-
-
   Future<void> accept(JobOffer offer) async {
-
     final job = await _repo.acceptOffer(offer.id);
-
     state = state.copyWith(
-
       offers: state.offers.where((o) => o.id != offer.id).toList(),
-
       activeJob: job,
-
     );
-
   }
-
-
 
   Future<void> reject(JobOffer offer) async {
-
     await _repo.rejectOffer(offer.id);
-
     state = state.copyWith(
-
       offers: state.offers.where((o) => o.id != offer.id).toList(),
-
     );
-
   }
-
-
 
   Future<void> updateStatus(BookingStatus s) async {
-
     final j = state.activeJob;
-
     if (j == null) return;
-
     await _repo.updateActiveJobStatus(s);
-
     state = state.copyWith(activeJob: j.copyWith(status: s));
-
   }
 
+  Future<void> pingLocation(double lat, double lng) async {
+    if (state.activeJob == null) return;
+    try {
+      await _repo.pingActiveJobLocation(lat: lat, lng: lng);
+    } catch (e) {
+      debugPrint('pingLocation error: $e');
+    }
+  }
 
-
-  Future<void> complete(int finalAmountRupees) async {
-
+  Future<void> complete() async {
     final j = state.activeJob;
-
     if (j == null) return;
-
-    final paise = finalAmountRupees * 100;
-
-    await _repo.completeActiveJob(paise);
-
-    state = state.copyWith(
-
-      activeJob: j.copyWith(
-
-        status: BookingStatus.completed,
-
-        finalAmountPaise: paise,
-
-      ),
-
-    );
-
+    // Temporary: visit fee only — do not collect final amount in app.
+    final settled = await _repo.completeActiveJob(0);
+    if (settled != null) {
+      state = state.copyWith(
+        activeJob: settled.copyWith(status: BookingStatus.completed),
+      );
+    } else {
+      state = state.copyWith(
+        activeJob: j.copyWith(
+          status: BookingStatus.completed,
+          proCreditPaise: j.commissionPreview?.proCreditPaise,
+        ),
+      );
+    }
   }
-
-
 
   void clearActive() => state = state.copyWith(clearActive: true);
-
 }
 
 
@@ -901,6 +923,10 @@ final earningsProvider = FutureProvider<EarningsSummary>((ref) {
 
   return ref.read(repositoryProvider).fetchEarnings();
 
+});
+
+final creditHistoryProvider = FutureProvider<List<CreditHistoryItem>>((ref) {
+  return ref.read(repositoryProvider).fetchCreditHistory();
 });
 
 /// ─── Customer ──────────────────────────────────────────────────────────
@@ -937,7 +963,32 @@ class CustomerNotifier extends StateNotifier<CustomerState> {
   Future<void> searchPros({required int cityId, String? categoryCode, String? query, double? lat, double? lng}) async {
     state = state.copyWith(loading: true);
     try {
-      final results = await _repo.searchPros(cityId: cityId, categoryCode: categoryCode, query: query, lat: lat, lng: lng);
+      // Keep bookings fresh so we can hide busy pros client-side too.
+      try {
+        final bookings = await _repo.fetchCustomerBookings();
+        state = state.copyWith(bookings: bookings);
+      } catch (_) {}
+
+      var results = await _repo.searchPros(
+        cityId: cityId,
+        categoryCode: categoryCode,
+        query: query,
+        lat: lat,
+        lng: lng,
+      );
+
+      // Safety net: hide pros with an in-process booking for this customer.
+      final busyProIds = {
+        for (final b in state.bookings)
+          if (b.isInProcess) b.professionalId,
+      };
+      if (busyProIds.isNotEmpty) {
+        results = [
+          for (final p in results)
+            if (!busyProIds.contains(p.id)) p,
+        ];
+      }
+
       state = state.copyWith(searchResults: results, loading: false);
     } catch (e) {
       debugPrint('searchPros error: $e');
@@ -985,6 +1036,9 @@ class CustomerNotifier extends StateNotifier<CustomerState> {
     DateTime? scheduledAt,
     double? addressLat,
     double? addressLng,
+    int? visitFeePaise,
+    bool visitFeePaid = false,
+    String? visitFeePaymentMethod,
   }) async {
     final b = await _repo.createBooking(
       professionalId: professionalId,
@@ -995,14 +1049,38 @@ class CustomerNotifier extends StateNotifier<CustomerState> {
       scheduledAt: scheduledAt,
       addressLat: addressLat,
       addressLng: addressLng,
+      visitFeePaise: visitFeePaise,
+      visitFeePaid: visitFeePaid,
+      visitFeePaymentMethod: visitFeePaymentMethod,
     );
     await loadBookings();
+    // Immediately hide this pro from nearby lists while booking is in process.
+    state = state.copyWith(
+      searchResults: [
+        for (final p in state.searchResults)
+          if (p.id != professionalId) p,
+      ],
+    );
     return b;
+  }
+
+  Future<void> cancelBooking(int bookingId) async {
+    await _repo.cancelBooking(bookingId);
+    await loadBookings();
   }
 
   Future<void> completeBooking(int bookingId) async {
     await _repo.completeBooking(bookingId);
     await loadBookings();
+  }
+
+  Future<CustomerBooking> payVisitFee(
+    int bookingId, {
+    String paymentMethod = 'upi',
+  }) async {
+    final b = await _repo.payVisitFee(bookingId, paymentMethod: paymentMethod);
+    await loadBookings();
+    return b;
   }
 
   Future<void> rateBooking(int bookingId, {required int stars, String? reviewText}) async {

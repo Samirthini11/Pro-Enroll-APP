@@ -263,7 +263,7 @@ class _ProSearchScreenState extends ConsumerState<ProSearchScreen> {
                                       Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(Icons.star, size: 13, color: Colors.amber.shade700),
+                                          Icon(Icons.star, size: 13, color: AppTheme.brandAccentDark),
                                           const SizedBox(width: 2),
                                           Text('${pro.ratingAvg.toStringAsFixed(1)} (${pro.ratingCount})',
                                               style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
@@ -21,6 +22,7 @@ class AppPage extends StatelessWidget {
     this.constrainWidth = true,
     this.background,
     this.padding,
+    this.fallbackRoute,
   });
 
   final String? title;
@@ -32,6 +34,21 @@ class AppPage extends StatelessWidget {
   final Color? background;
   final EdgeInsets? padding;
 
+  /// Used when the stack has nothing to pop (e.g. opened via notification `go`).
+  /// Prevents Android back from exiting the app.
+  final String? fallbackRoute;
+
+  void _handleBack(BuildContext context) {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    if (fallbackRoute != null && fallbackRoute!.isNotEmpty) {
+      context.go(fallbackRoute!);
+      return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final hPad = context.pageHPadding;
@@ -42,12 +59,21 @@ class AppPage extends StatelessWidget {
     Widget body = Padding(padding: pad, child: child);
     if (constrainWidth) body = ContentMaxWidth(child: body);
 
-    return Scaffold(
+    final canPop = context.canPop();
+    final hasFallback = fallbackRoute != null && fallbackRoute!.isNotEmpty;
+
+    final scaffold = Scaffold(
       backgroundColor: background,
       appBar: title != null
           ? AppBar(
               title: Text(title!),
-              automaticallyImplyLeading: showBack,
+              automaticallyImplyLeading: false,
+              leading: showBack
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: () => _handleBack(context),
+                    )
+                  : null,
               actions: actions,
             )
           : null,
@@ -62,6 +88,19 @@ class AppPage extends StatelessWidget {
               ),
             ),
     );
+
+    // System back: if stack is empty, go to fallback instead of closing the app.
+    if (showBack && hasFallback) {
+      return PopScope(
+        canPop: canPop,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _handleBack(context);
+        },
+        child: scaffold,
+      );
+    }
+
+    return scaffold;
   }
 }
 

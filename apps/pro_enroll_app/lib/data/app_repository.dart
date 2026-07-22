@@ -38,6 +38,12 @@ class AppRepository implements ProRepository {
   final ApiRepository _api;
   final JwtTokenService _tokens;
 
+  /// Best-effort TCP/API warm-up so OTP is not the first cold request.
+  Future<void> warmUp() => _whenApi(
+        api: _api.warmUp,
+        mock: () async {},
+      );
+
   bool get _useApi => AppConfig.hasApi;
 
   Future<T> _whenApi<T>({
@@ -313,9 +319,19 @@ class AppRepository implements ProRepository {
       );
 
   @override
-  Future<void> completeActiveJob(int finalAmountPaise) => _whenAuthedApi(
-        api: () => _api.completeActiveJob(finalAmountPaise),
+  Future<void> pingActiveJobLocation({required double lat, required double lng}) =>
+      _whenAuthedApi(
+        api: () => _api.pingActiveJobLocation(lat: lat, lng: lng),
         mock: () async {},
+      );
+
+  @override
+  Future<ActiveJob?> completeActiveJob(int finalAmountPaise) => _whenAuthedApi(
+        api: () => _api.completeActiveJob(finalAmountPaise),
+        mock: () async {
+          await _mock.completeActiveJob(finalAmountPaise);
+          return null;
+        },
       );
 
   @override
@@ -325,8 +341,27 @@ class AppRepository implements ProRepository {
       );
 
   @override
+  Future<List<CreditHistoryItem>> fetchCreditHistory() => _whenAuthedApi(
+        api: _api.fetchCreditHistory,
+        mock: _mock.fetchCreditHistory,
+      );
+
+  @override
+  Future<EarningsSummary> markPlatformFeePaid({required String utr}) =>
+      _whenAuthedApi(
+        api: () => _api.markPlatformFeePaid(utr: utr),
+        mock: () => _mock.markPlatformFeePaid(utr: utr),
+      );
+
+  @override
   Future<void> updateAvailability(bool isAvailable) => _whenAuthedApi(
         api: () => _api.updateAvailability(isAvailable),
+        mock: () async {},
+      );
+
+  @override
+  Future<void> pingPresence() => _whenAuthedApi(
+        api: () => _api.pingPresence(),
         mock: () async {},
       );
 
@@ -377,6 +412,9 @@ class AppRepository implements ProRepository {
     DateTime? scheduledAt,
     double? addressLat,
     double? addressLng,
+    int? visitFeePaise,
+    bool visitFeePaid = false,
+    String? visitFeePaymentMethod,
   }) =>
       _whenAuthedApi(
         api: () => _api.createBooking(
@@ -388,6 +426,9 @@ class AppRepository implements ProRepository {
           scheduledAt: scheduledAt,
           addressLat: addressLat,
           addressLng: addressLng,
+          visitFeePaise: visitFeePaise,
+          visitFeePaid: visitFeePaid,
+          visitFeePaymentMethod: visitFeePaymentMethod,
         ),
         mock: () => _mock.createBooking(
           professionalId: professionalId,
@@ -398,6 +439,9 @@ class AppRepository implements ProRepository {
           scheduledAt: scheduledAt,
           addressLat: addressLat,
           addressLng: addressLng,
+          visitFeePaise: visitFeePaise,
+          visitFeePaid: visitFeePaid,
+          visitFeePaymentMethod: visitFeePaymentMethod,
         ),
       );
 
@@ -408,9 +452,25 @@ class AppRepository implements ProRepository {
       );
 
   @override
+  Future<void> cancelBooking(int bookingId) => _whenAuthedApi(
+        api: () => _api.cancelBooking(bookingId),
+        mock: () => _mock.cancelBooking(bookingId),
+      );
+
+  @override
   Future<void> completeBooking(int bookingId) => _whenAuthedApi(
         api: () => _api.completeBooking(bookingId),
         mock: () => _mock.completeBooking(bookingId),
+      );
+
+  @override
+  Future<CustomerBooking> payVisitFee(
+    int bookingId, {
+    String paymentMethod = 'upi',
+  }) =>
+      _whenAuthedApi(
+        api: () => _api.payVisitFee(bookingId, paymentMethod: paymentMethod),
+        mock: () => _mock.payVisitFee(bookingId, paymentMethod: paymentMethod),
       );
 
   @override

@@ -31,12 +31,14 @@ import '../features/onboarding/category_select_screen.dart';
 import '../features/onboarding/experience_screen.dart';
 import '../features/onboarding/home_location_screen.dart';
 import '../features/onboarding/visit_fee_screen.dart';
+import '../features/legal/terms_acceptance_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../state/app_state.dart';
 
 /// Centralised list of route paths so screens never hard-code strings.
 class Routes {
   static const splash = '/';
+  static const termsAcceptance = '/legal/terms';
   static const authLanding = '/auth/landing';
   static const phone = '/auth/phone';
   static const otp = '/auth/otp';
@@ -70,6 +72,7 @@ class Routes {
 
   static const _public = {
     splash,
+    termsAcceptance,
     authLanding,
     phone,
     otp,
@@ -125,6 +128,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.splash,
         builder: (_, __) => const SplashScreen(),
+      ),
+      GoRoute(
+        path: Routes.termsAcceptance,
+        builder: (ctx, st) => TermsAcceptanceScreen(
+          viewOnly: st.extra == true,
+        ),
       ),
       GoRoute(
         path: Routes.authLanding,

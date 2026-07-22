@@ -27,7 +27,7 @@ class _EditVisitFeeScreenState extends ConsumerState<EditVisitFeeScreen> {
   void initState() {
     super.initState();
     final p = ref.read(profileProvider);
-    _fee = (p.visitFeePaise / 100).round().clamp(50, 500);
+    _fee = clampVisitFeeRupees((p.visitFeePaise / 100).round());
   }
 
   Future<void> _save() async {
@@ -41,7 +41,7 @@ class _EditVisitFeeScreenState extends ConsumerState<EditVisitFeeScreen> {
       if (mounted) context.pop();
     } catch (e) {
       if (mounted) {
-        showApiError(context, e, fallback: 'Could not update visit fee.');
+        showApiError(context, e, fallback: 'Could not update visiting charge.');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -68,14 +68,15 @@ class _EditVisitFeeScreenState extends ConsumerState<EditVisitFeeScreen> {
         fee: _fee,
         amountSize: amountSize,
         helper:
-            'Set your visit fee — customers see this when booking you. '
+            'Set your visiting charge — customers see this when booking you. '
             'You can change it anytime.',
+        chargeLabel: 'Your visiting charge',
         onFeeChanged: (v) => setState(() => _fee = v),
       );
     }
 
     return AppPage(
-      title: 'Visit fee',
+      title: 'Visiting charge',
       child: body,
       bottom: FilledButton(
         onPressed: _busy || categoriesAsync.isLoading ? null : _save,
@@ -85,7 +86,7 @@ class _EditVisitFeeScreenState extends ConsumerState<EditVisitFeeScreen> {
                 width: 22,
                 child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
               )
-            : const Text('Save visit fee'),
+            : const Text('Save visiting charge'),
       ),
     );
   }

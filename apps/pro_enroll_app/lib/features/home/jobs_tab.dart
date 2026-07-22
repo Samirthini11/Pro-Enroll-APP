@@ -6,6 +6,7 @@ import '../../core/constants.dart';
 import '../../core/i18n.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
+import '../../data/api/api_exception.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
@@ -62,11 +63,34 @@ class _JobsTabState extends ConsumerState<JobsTab> {
               label: l.t('jobs.available_toggle'),
               onLabel: l.t('common.online'),
               offLabel: l.t('common.offline'),
-              onChanged: (v) {
-                ref.read(profileProvider.notifier).setAvailability(v);
-                if (v) _refresh();
+              enabled: !profile.listingHeld,
+              onChanged: (v) async {
+                try {
+                  await ref.read(profileProvider.notifier).setAvailability(v);
+                  if (v) _refresh();
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        e is ApiException
+                            ? e.message
+                            : 'Could not update availability.',
+                      ),
+                    ),
+                  );
+                }
               },
             ),
+            if (profile.listingHeld) ...[
+              const SizedBox(height: 12),
+              const TrustBanner(
+                tone: TrustBannerTone.warning,
+                icon: Icons.pause_circle_filled,
+                text:
+                    'Listing on hold — free bookings used up. Customers cannot see you until support unlocks your account.',
+              ),
+            ],
             const SizedBox(height: 20),
             if (jobs.activeJob != null) ...[
               _ActiveJobCard(job: jobs.activeJob!),
@@ -123,6 +147,12 @@ class _Header extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final earnings = ref.watch(earningsProvider);
+    final walletPaise = earnings.maybeWhen(
+      data: (e) => e.walletBalancePaise,
+      orElse: () => null,
+    );
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -166,6 +196,42 @@ class _Header extends ConsumerWidget {
               ),
             ],
           ),
+          if (walletPaise != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet_outlined,
+                      color: AppTheme.brandPrimary, size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Wallet',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textMuted,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    formatPaise(walletPaise),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      color: AppTheme.brandPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           BookServiceChip(
             compact: true,
@@ -184,12 +250,14 @@ class _AvailabilityCard extends StatelessWidget {
     required this.onLabel,
     required this.offLabel,
     required this.onChanged,
+    this.enabled = true,
   });
   final bool available;
   final String label;
   final String onLabel;
   final String offLabel;
   final ValueChanged<bool> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -263,7 +331,7 @@ class _AvailabilityCard extends StatelessWidget {
           ),
           Switch(
             value: available,
-            onChanged: onChanged,
+            onChanged: enabled ? onChanged : null,
             activeThumbColor: Colors.white,
             activeTrackColor: Colors.white.withValues(alpha: 0.35),
           ),
@@ -353,6 +421,21 @@ class _OfferCard extends ConsumerWidget {
                   ),
                 ],
               ),
+              if (offer.commissionPreview != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  offer.commissionPreview!.isFreeBooking
+                      ? 'Credit ${formatPaise(offer.commissionPreview!.proCreditPaise)} · free (${offer.commissionPreview!.freeBookingsRemaining} left)'
+                      : 'You get ${formatPaise(offer.commissionPreview!.proCreditPaise)} after ${offer.commissionPreview!.visitCommissionPercent}% fee',
+                  style: TextStyle(
+                    color: offer.commissionPreview!.isFreeBooking
+                        ? AppTheme.brandSuccess
+                        : AppTheme.textMuted,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               LayoutBuilder(builder: (ctx, bc) {
                 final tight = bc.maxWidth < 280;
@@ -365,9 +448,19 @@ class _OfferCard extends ConsumerWidget {
                   child: Text(l.t('offer.reject')),
                 );
                 final accept = FilledButton(
-                  onPressed: () {
-                    ref.read(jobsProvider.notifier).accept(offer);
-                    context.push(Routes.activeJob);
+                  onPressed: () async {
+                    try {
+                      await ref.read(jobsProvider.notifier).accept(offer);
+                      if (context.mounted) context.push(Routes.activeJob);
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      final msg = e is ApiException
+                          ? e.message
+                          : 'Could not accept offer';
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(msg)),
+                      );
+                    }
                   },
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(44),

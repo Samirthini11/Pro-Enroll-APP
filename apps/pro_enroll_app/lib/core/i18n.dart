@@ -34,6 +34,33 @@ const _strings = <String, Map<String, String>>{
     'ta': 'உள்ளூர் திறமை. சரிபார்க்கப்பட்ட நிபுணர். தினசரி வருமானம்.',
   },
 
+  'legal.terms.title': {
+    'en': 'Terms & Conditions',
+    'ta': 'விதிமுறைகள் & நிபந்தனைகள்',
+  },
+  'legal.terms.welcome': {
+    'en': 'Welcome to ProConnect',
+    'ta': 'ProConnect-க்கு வரவேற்கிறோம்',
+  },
+  'legal.terms.subtitle': {
+    'en': 'Please read and accept our Terms & Conditions to continue.',
+    'ta': 'தொடர, எங்கள் விதிமுறைகளைப் படித்து ஏற்கவும்.',
+  },
+  'legal.terms.updated': {
+    'en': 'Last updated: July 2026',
+    'ta': 'கடைசி புதுப்பிப்பு: ஜூலை 2026',
+  },
+  'legal.terms.checkbox': {
+    'en':
+        'I have read and agree to the Terms & Conditions and Privacy Policy.',
+    'ta':
+        'விதிமுறைகள் & நிபந்தனைகள் மற்றும் தனியுரிமைக் கொள்கையைப் படித்து ஏற்கிறேன்.',
+  },
+  'legal.terms.accept': {
+    'en': 'Accept & Continue',
+    'ta': 'ஏற்று தொடரவும்',
+  },
+
   // Language select
   'lang.title': {
     'en': 'Choose your language',
@@ -144,14 +171,22 @@ const _strings = <String, Map<String, String>>{
   },
 
   'onboarding.fee.title': {
-    'en': 'Set your visit fee',
+    'en': 'Set your visiting charge',
     'ta': 'உங்கள் வருகை கட்டணத்தை அமைக்கவும்',
   },
   'onboarding.fee.helper': {
     'en':
-        'This is the fixed fee a customer pays when you visit, before any repair work.',
-    'ta':
-        'உங்கள் வருகை நேரத்தில், எந்த பழுதுபார்ப்பும் தொடங்குவதற்கு முன், வாடிக்கையாளர் செலுத்தும் நிலையான கட்டணம் இது.',
+        'Max ₹500. Customers only see this visit fee — platform fee (5%) is not shown to them.',
+        'ta':
+        'அதிகபட்சம் ₹500. வாடிக்கையாளருக்கு வருகை கட்டணம் மட்டும் தெரியும் — பிளாட்ஃபார்ம் கட்டணம் (5%) காட்டப்படாது.',
+  },
+  'onboarding.fee.yourCharge': {
+    'en': 'Your visiting charge',
+    'ta': 'உங்கள் வருகை கட்டணம்',
+  },
+  'onboarding.fee.suggestedHint': {
+    'en': 'Suggested from your selected services — adjust if needed.',
+    'ta': 'தேர்ந்தெடுத்த சேவைகளின் அடிப்படையில் — தேவைப்பட்டால் மாற்றவும்.',
   },
 
   // KYC
@@ -205,6 +240,7 @@ const _strings = <String, Map<String, String>>{
 
   // Home shell
   'home.tab.jobs': {'en': 'Jobs', 'ta': 'வேலைகள்'},
+  'home.tab.wallet': {'en': 'Wallet', 'ta': 'வாலட்'},
   'home.tab.earnings': {'en': 'Earnings', 'ta': 'வருமானம்'},
   'home.tab.profile': {'en': 'Profile', 'ta': 'சுயவிவரம்'},
   'home.tab.help': {'en': 'Help', 'ta': 'உதவி'},
@@ -234,7 +270,16 @@ const _strings = <String, Map<String, String>>{
   },
 
   'job.on_the_way': {'en': 'On the way', 'ta': 'வரும் வழியில்'},
+  'job.arrived': {'en': "I've arrived", 'ta': 'நான் வந்துவிட்டேன்'},
   'job.start': {'en': 'Start work', 'ta': 'வேலையை தொடங்கு'},
+  'job.arrive_first': {
+    'en': 'Mark arrived when you reach the customer location, then start work.',
+    'ta': 'வாடிக்கையாளர் இடத்தை அடைந்த பிறகு வந்துவிட்டேன் எனக் குறித்து, பின்னர் வேலையை தொடங்குங்கள்.',
+  },
+  'job.too_far': {
+    'en': 'You seem far from the customer. Reach the location, then mark arrived.',
+    'ta': 'நீங்கள் வாடிக்கையாளரிடமிருந்து தொலைவில் உள்ளீர்கள். இடத்தை அடைந்த பிறகு குறிக்கவும்.',
+  },
   'job.complete': {'en': 'Complete job', 'ta': 'வேலையை முடி'},
   'job.final_amount': {
     'en': 'Final amount (₹)',

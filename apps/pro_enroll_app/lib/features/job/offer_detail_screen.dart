@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
 import '../../core/i18n.dart';
+import '../../core/ist_time.dart';
 import '../../core/theme.dart';
+import '../../data/api/api_exception.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
@@ -25,10 +27,17 @@ class OfferDetailScreen extends ConsumerStatefulWidget {
 class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   Timer? _ticker;
   int _remaining = 60;
+  JobOffer? _fetched;
+  bool _loadingOffer = false;
+  String? _loadError;
 
   @override
   void initState() {
     super.initState();
+    Future.microtask(() async {
+      await ref.read(pushNotificationServiceProvider).syncTokenWithServer();
+      await _ensureOffer();
+    });
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _remaining = (_remaining - 1).clamp(0, 60));
@@ -43,6 +52,38 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     });
   }
 
+  Future<void> _ensureOffer() async {
+    final id = widget.offerId;
+    if (id == null || id.isEmpty) return;
+    if (_findOffer() != null) return;
+    setState(() {
+      _loadingOffer = true;
+      _loadError = null;
+    });
+    try {
+      final offer = await ref.read(repositoryProvider).fetchOffer(id);
+      if (!mounted) return;
+      setState(() {
+        _fetched = offer;
+        _loadingOffer = false;
+        if (offer == null) {
+          _loadError = 'This offer is no longer available.';
+        }
+      });
+      // Keep jobs list in sync for accept/reject.
+      if (offer != null) {
+        final skills = ref.read(profileProvider).skills.map((s) => s.categoryCode).toList();
+        unawaited(ref.read(jobsProvider.notifier).refresh(skills));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingOffer = false;
+        _loadError = e is ApiException ? e.message : 'Could not load offer.';
+      });
+    }
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
@@ -50,23 +91,35 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   }
 
   JobOffer? _findOffer() {
+    if (_fetched != null && (widget.offerId == null || _fetched!.id == widget.offerId)) {
+      return _fetched;
+    }
     final offers = ref.read(jobsProvider).offers;
     for (final o in offers) {
       if (o.id == widget.offerId) return o;
     }
-    return offers.isEmpty ? null : offers.first;
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
     final lang = ref.watch(localeProvider).languageCode;
+    ref.watch(jobsProvider); // rebuild when offers refresh
     final offer = _findOffer();
+    if (_loadingOffer && offer == null) {
+      return AppPage(
+        title: l.t('offer.title'),
+        fallbackRoute: Routes.home,
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
     if (offer == null) {
       return AppPage(
         title: l.t('offer.title'),
-        child: const Center(
-          child: Text('This offer is no longer available.'),
+        fallbackRoute: Routes.home,
+        child: Center(
+          child: Text(_loadError ?? 'This offer is no longer available.'),
         ),
       );
     }
@@ -78,6 +131,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
 
     return AppPage(
       title: l.t('offer.title'),
+      fallbackRoute: Routes.home,
       child: ListView(
         physics: const BouncingScrollPhysics(),
         children: [
@@ -85,21 +139,21 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFFEF3C7),
+              color: AppTheme.brandAccentLight,
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              border: Border.all(color: const Color(0xFFFDE68A)),
+              border: Border.all(color: AppTheme.brandAccentBorder),
             ),
             child: Column(
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.timer, color: Color(0xFFB45309)),
+                    const Icon(Icons.timer, color: AppTheme.brandAccentText),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         l.t('offer.timer', {'sec': '$_remaining'}),
                         style: const TextStyle(
-                          color: Color(0xFFB45309),
+                          color: AppTheme.brandAccentText,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -113,7 +167,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                     value: progress,
                     minHeight: 6,
                     backgroundColor: Colors.white,
-                    color: const Color(0xFFD97706),
+                    color: AppTheme.brandAccentDark,
                   ),
                 ),
               ],
@@ -173,15 +227,26 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                   const SizedBox(height: 10),
                   _row(Icons.currency_rupee, 'Visit fee',
                       formatPaise(offer.visitFeePaise)),
+                  if (offer.commissionPreview != null) ...[
+                    const SizedBox(height: 10),
+                    _row(
+                      Icons.account_balance_wallet_outlined,
+                      'Your credit',
+                      formatPaise(offer.commissionPreview!.proCreditPaise),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
           const SizedBox(height: 16),
-          const TrustBanner(
-            tone: TrustBannerTone.success,
+          TrustBanner(
+            tone: offer.commissionPreview?.isFreeBooking == true
+                ? TrustBannerTone.success
+                : TrustBannerTone.info,
             icon: Icons.shield,
-            text: 'Customer pre-paid the visit fee. You get it via payout.',
+            text: offer.commissionPreview?.label ??
+                'Visit fee is paid by the customer after work is done. Platform fee is on visit charge only.',
           ),
         ],
       ),
@@ -196,8 +261,18 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
         );
         final accept = FilledButton(
           onPressed: () async {
-            await ref.read(jobsProvider.notifier).accept(offer);
-            if (ctx.mounted) context.go(Routes.activeJob);
+            try {
+              await ref.read(jobsProvider.notifier).accept(offer);
+              if (ctx.mounted) context.go(Routes.activeJob);
+            } catch (e) {
+              if (!ctx.mounted) return;
+              final msg = e is ApiException
+                  ? e.message
+                  : 'Could not accept offer';
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                SnackBar(content: Text(msg)),
+              );
+            }
           },
           child: Text(l.t('offer.accept')),
         );
@@ -254,10 +329,5 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     );
   }
 
-  String _fmtTime(DateTime t) {
-    final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
-    final ap = t.hour >= 12 ? 'PM' : 'AM';
-    final m = t.minute.toString().padLeft(2, '0');
-    return 'Today $h:$m $ap';
-  }
+  String _fmtTime(DateTime t) => IstTime.format(t, pattern: 'EEE, d MMM · h:mm a');
 }

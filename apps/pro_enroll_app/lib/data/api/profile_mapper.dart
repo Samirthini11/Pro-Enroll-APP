@@ -1,3 +1,4 @@
+import '../../core/ist_time.dart';
 import '../models.dart';
 
 KycStatus kycStatusFromApi(String? raw) {
@@ -38,6 +39,8 @@ BookingStatus bookingStatusFromApi(String? raw) {
   switch (raw) {
     case 'on_the_way':
       return BookingStatus.onTheWay;
+    case 'arrived':
+      return BookingStatus.arrived;
     case 'in_progress':
       return BookingStatus.inProgress;
     case 'completed':
@@ -53,6 +56,8 @@ String bookingStatusToApi(BookingStatus s) {
   switch (s) {
     case BookingStatus.onTheWay:
       return 'on_the_way';
+    case BookingStatus.arrived:
+      return 'arrived';
     case BookingStatus.inProgress:
       return 'in_progress';
     case BookingStatus.completed:
@@ -98,6 +103,21 @@ ProProfile? profileFromApiMap(Map<String, dynamic>? map) {
     ratingCount: (map['rating_count'] as num?)?.toInt() ?? 0,
     jobsCompleted: (map['jobs_completed'] as num?)?.toInt() ?? 0,
     proScore: (map['pro_score'] as num?)?.toInt() ?? 50,
+    listingHeld: map['listing_held'] == true || map['listing_held'] == 1,
+    freeBookingsUsed: (map['free_bookings_used'] as num?)?.toInt() ?? 0,
+  );
+}
+
+CommissionPreview? commissionPreviewFromApi(dynamic raw) {
+  if (raw is! Map) return null;
+  final m = Map<String, dynamic>.from(raw);
+  return CommissionPreview(
+    isFreeBooking: m['is_free_booking'] == true,
+    freeBookingsRemaining: (m['free_bookings_remaining'] as num?)?.toInt() ?? 0,
+    visitCommissionPercent: (m['visit_commission_percent'] as num?)?.toInt() ?? 0,
+    commissionPaise: (m['commission_paise'] as num?)?.toInt() ?? 0,
+    proCreditPaise: (m['pro_credit_paise'] as num?)?.toInt() ?? 0,
+    label: m['label'] as String?,
   );
 }
 
@@ -111,8 +131,9 @@ JobOffer jobOfferFromApi(Map<String, dynamic> m) {
     customerAreaName: m['customer_area_name'] as String,
     distanceKm: (m['distance_km'] as num).toDouble(),
     visitFeePaise: (m['visit_fee_paise'] as num).toInt(),
-    preferredTime: DateTime.parse(m['preferred_time'] as String),
-    expiresAt: DateTime.parse(m['expires_at'] as String),
+    preferredTime: IstTime.parse(m['preferred_time'] as String?),
+    expiresAt: IstTime.parse(m['expires_at'] as String?),
+    commissionPreview: commissionPreviewFromApi(m['commission_preview']),
   );
 }
 
@@ -133,21 +154,65 @@ ActiveJob activeJobFromApi(Map<String, dynamic> m) {
     finalAmountPaise: (m['final_amount_paise'] as num?)?.toInt(),
     customerLat: (m['customer_lat'] as num?)?.toDouble(),
     customerLng: (m['customer_lng'] as num?)?.toDouble(),
+    commissionPreview: commissionPreviewFromApi(m['commission_preview']),
+    proCreditPaise: (m['pro_credit_paise'] as num?)?.toInt(),
   );
 }
 
 EarningsSummary earningsFromApi(Map<String, dynamic> m) {
+  final wallet = (m['wallet_balance_paise'] as num?)?.toInt()
+      ?? (m['pending_payout_paise'] as num?)?.toInt()
+      ?? 0;
   return EarningsSummary(
     todayPaise: (m['today_paise'] as num?)?.toInt() ?? 0,
     weekPaise: (m['week_paise'] as num?)?.toInt() ?? 0,
     monthPaise: (m['month_paise'] as num?)?.toInt() ?? 0,
     payoutsThisMonthPaise: (m['payouts_this_month_paise'] as num?)?.toInt() ?? 0,
-    pendingPayoutPaise: (m['pending_payout_paise'] as num?)?.toInt() ?? 0,
+    pendingPayoutPaise: (m['pending_payout_paise'] as num?)?.toInt() ?? wallet,
     jobsToday: (m['jobs_today'] as num?)?.toInt() ?? 0,
+    walletBalancePaise: wallet,
     ratingAvg: (m['rating_avg'] as num?)?.toDouble(),
     ratingCount: (m['rating_count'] as num?)?.toInt(),
     jobsCompleted: (m['jobs_completed'] as num?)?.toInt(),
+    visitCommissionPercent: (m['visit_commission_percent'] as num?)?.toInt() ?? 5,
+    freeBookingLimit: (m['free_booking_limit'] as num?)?.toInt() ?? 5,
+    freeBookingsUsed: (m['free_bookings_used'] as num?)?.toInt() ?? 0,
+    freeBookingsRemaining: (m['free_bookings_remaining'] as num?)?.toInt() ?? 0,
+    listingHeld: m['listing_held'] == true || m['listing_held'] == 1,
+    commissionTodayPaise: (m['commission_today_paise'] as num?)?.toInt() ?? 0,
+    commissionNote: m['commission_note'] as String?,
+    platformFeeDuePaise: (m['platform_fee_due_paise'] as num?)?.toInt() ?? 0,
+    companyUpiId: m['company_upi_id'] as String?,
+    companyUpiName: m['company_upi_name'] as String?,
+    companyUpiPayUri: m['company_upi_pay_uri'] as String?,
   );
+}
+
+CreditHistoryItem creditHistoryItemFromApi(Map<String, dynamic> m) {
+  return CreditHistoryItem(
+    id: '${m['id'] ?? ''}',
+    bookingCode: m['booking_code'] as String? ?? '',
+    categoryCode: m['category_code'] as String? ?? '',
+    creditPaise: (m['credit_paise'] as num?)?.toInt() ?? 0,
+    visitFeePaise: (m['visit_fee_paise'] as num?)?.toInt() ?? 0,
+    commissionPaise: (m['commission_paise'] as num?)?.toInt() ?? 0,
+    commissionWaived: m['commission_waived'] == true || m['commission_waived'] == 1,
+    platformFeePaid: m['platform_fee_paid'] == true || m['platform_fee_paid'] == 1,
+    finalAmountPaise: (m['final_amount_paise'] as num?)?.toInt(),
+    utr: m['commission_upi_utr'] as String?,
+    completedAt: m['completed_at'] != null
+        ? IstTime.parse(m['completed_at'] as String)
+        : null,
+    label: m['label'] as String?,
+  );
+}
+
+List<CreditHistoryItem> creditHistoryFromApi(dynamic raw) {
+  if (raw is! List) return const [];
+  return [
+    for (final item in raw)
+      if (item is Map<String, dynamic>) creditHistoryItemFromApi(item),
+  ];
 }
 
 // ─── Customer-side mappers ──────────────────────────────────────────────
@@ -179,6 +244,22 @@ List<BookingTrackingStep> trackingStepsFromApi(dynamic raw) {
           state: item['state'] as String? ?? 'upcoming',
         ),
   ];
+}
+
+BookingLiveTracking? trackingFromApi(dynamic raw) {
+  if (raw is! Map<String, dynamic>) return null;
+  final lat = (raw['pro_lat'] as num?)?.toDouble();
+  final lng = (raw['pro_lng'] as num?)?.toDouble();
+  if (lat == null || lng == null) return null;
+  return BookingLiveTracking(
+    proLat: lat,
+    proLng: lng,
+    distanceKm: (raw['distance_km'] as num?)?.toDouble() ?? 0,
+    etaMinutes: (raw['eta_minutes'] as num?)?.toInt() ?? 0,
+    updatedAt: raw['updated_at'] != null
+        ? IstTime.parse(raw['updated_at'] as String)
+        : null,
+  );
 }
 
 CustomerBooking customerBookingFromApi(Map<String, dynamic> m) {
@@ -219,9 +300,17 @@ CustomerBooking customerBookingFromApi(Map<String, dynamic> m) {
     trackingSteps: trackingStepsFromApi(m['tracking_steps']),
     professionalPhoneE164: proMap?['phone_e164'] as String?,
     professionalPhoneMasked: proMap?['phone_masked'] as String?,
-    createdAt: DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
-    scheduledAt: m['scheduled_at'] != null ? DateTime.tryParse(m['scheduled_at'] as String) : null,
+    visitFeePaid: m['visit_fee_paid'] == true || m['visit_fee_paid'] == 1,
+    visitFeePaymentMethod: m['visit_fee_payment_method'] as String?,
+    createdAt: IstTime.parse(m['created_at'] as String?),
+    scheduledAt: m['scheduled_at'] != null
+        ? IstTime.parse(m['scheduled_at'] as String)
+        : null,
+    acceptedAt: m['accepted_at'] != null
+        ? IstTime.parse(m['accepted_at'] as String)
+        : null,
     rating: rating,
+    tracking: trackingFromApi(m['tracking']),
   );
 }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,7 +8,9 @@ import '../../core/app_config.dart';
 import '../../core/i18n.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
+import '../../data/app_repository.dart';
 import '../../routing/router.dart';
+import '../../services/legal_acceptance_service.dart';
 import '../../state/categories_provider.dart';
 import '../../state/app_state.dart';
 
@@ -21,7 +25,34 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future<void>.delayed(const Duration(milliseconds: 1100), _navigateNext);
+    Future.microtask(_boot);
+  }
+
+  Future<void> _boot() async {
+    if (!mounted) return;
+
+    // Capture notification tap payload before any navigation.
+    if (AppConfig.hasApi) {
+      await ref.read(pushNotificationServiceProvider).init();
+    }
+
+    final accepted =
+        await LegalAcceptanceService().hasAcceptedCurrentTerms();
+    if (!accepted) {
+      if (mounted) context.go(Routes.termsAcceptance);
+      return;
+    }
+
+    // Warm API while splash shows — reduces first OTP / login timeout.
+    if (AppConfig.hasApi) {
+      final repo = ref.read(repositoryProvider);
+      if (repo is AppRepository) {
+        unawaited(repo.warmUp());
+      }
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    await _navigateNext();
   }
 
   Future<void> _navigateNext() async {
@@ -36,18 +67,29 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         if (restored) {
           final route =
               ref.read(authProvider.notifier).routeAfterSessionRestore();
-          context.go(route);
+          await ref.read(authProvider.notifier).navigateRespectingPush(
+                GoRouter.of(context),
+                route,
+              );
           return;
         }
       }
 
       if (mounted) {
+        await ref.read(pushNotificationServiceProvider).init();
         context.go(Routes.authLanding);
+        await ref
+            .read(pushNotificationServiceProvider)
+            .markReadyAndFlush(authenticated: false);
       }
     } catch (e) {
       debugPrint('Splash navigation error: $e');
       if (mounted) {
+        await ref.read(pushNotificationServiceProvider).init();
         context.go(Routes.authLanding);
+        await ref
+            .read(pushNotificationServiceProvider)
+            .markReadyAndFlush(authenticated: false);
       }
     }
   }

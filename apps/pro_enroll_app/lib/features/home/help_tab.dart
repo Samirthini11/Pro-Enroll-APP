@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/i18n.dart';
 import '../../core/responsive.dart';
+import '../../routing/router.dart';
 import '../shared/widgets.dart';
 
 class HelpTab extends ConsumerWidget {
@@ -47,6 +49,13 @@ class HelpTab extends ConsumerWidget {
             subtitle:
                 'Free Tamil video courses — AC, RO, plumbing, customer service',
             onTap: () {},
+          ),
+          const SizedBox(height: 10),
+          InfoCard(
+            icon: Icons.gavel_outlined,
+            title: l.t('legal.terms.title'),
+            subtitle: l.t('legal.terms.subtitle'),
+            onTap: () => context.push(Routes.termsAcceptance, extra: true),
           ),
           const SizedBox(height: 18),
           const TrustBanner(

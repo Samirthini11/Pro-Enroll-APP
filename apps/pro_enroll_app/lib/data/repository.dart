@@ -73,10 +73,16 @@ abstract class ProRepository {
   Future<ActiveJob> acceptOffer(String offerId);
   Future<void> rejectOffer(String offerId);
   Future<void> updateActiveJobStatus(BookingStatus status);
-  Future<void> completeActiveJob(int finalAmountPaise);
+  Future<void> pingActiveJobLocation({required double lat, required double lng});
+  Future<ActiveJob?> completeActiveJob(int finalAmountPaise);
 
   Future<EarningsSummary> fetchEarnings();
+  Future<List<CreditHistoryItem>> fetchCreditHistory();
+  Future<EarningsSummary> markPlatformFeePaid({required String utr});
   Future<void> updateAvailability(bool isAvailable);
+
+  /// Keep online presence alive while the pro app is open.
+  Future<void> pingPresence();
 
   // ─── Customer-side ──────────────────────────────────────────────────
   Future<List<ProSearchResult>> searchPros({required int cityId, String? categoryCode, String? query, double? lat, double? lng});
@@ -96,9 +102,17 @@ abstract class ProRepository {
     DateTime? scheduledAt,
     double? addressLat,
     double? addressLng,
+    int? visitFeePaise,
+    bool visitFeePaid = false,
+    String? visitFeePaymentMethod,
   });
   Future<CustomerBooking> fetchBookingDetail(int bookingId);
+  Future<void> cancelBooking(int bookingId);
   Future<void> completeBooking(int bookingId);
+  Future<CustomerBooking> payVisitFee(
+    int bookingId, {
+    String paymentMethod = 'upi',
+  });
   Future<void> rateBooking(int bookingId, {required int stars, String? reviewText});
   Future<CustomerProfile?> fetchCustomerProfile();
   Future<CustomerProfile?> updateCustomerProfile({

@@ -18,6 +18,7 @@ enum BookingStatus {
   pendingAcceptance,
   accepted,
   onTheWay,
+  arrived,
   inProgress,
   completed,
   cancelled,
@@ -53,6 +54,8 @@ class ProProfile {
     this.ratingCount = 0,
     this.jobsCompleted = 0,
     this.proScore = 50,
+    this.listingHeld = false,
+    this.freeBookingsUsed = 0,
   });
 
   final String? fullName;
@@ -71,6 +74,8 @@ class ProProfile {
   final int ratingCount;
   final int jobsCompleted;
   final int proScore;
+  final bool listingHeld;
+  final int freeBookingsUsed;
 
   bool get isComplete =>
       fullName != null &&
@@ -95,6 +100,8 @@ class ProProfile {
     int? ratingCount,
     int? jobsCompleted,
     int? proScore,
+    bool? listingHeld,
+    int? freeBookingsUsed,
   }) {
     return ProProfile(
       fullName: fullName ?? this.fullName,
@@ -113,8 +120,28 @@ class ProProfile {
       ratingCount: ratingCount ?? this.ratingCount,
       jobsCompleted: jobsCompleted ?? this.jobsCompleted,
       proScore: proScore ?? this.proScore,
+      listingHeld: listingHeld ?? this.listingHeld,
+      freeBookingsUsed: freeBookingsUsed ?? this.freeBookingsUsed,
     );
   }
+}
+
+class CommissionPreview {
+  CommissionPreview({
+    required this.isFreeBooking,
+    required this.freeBookingsRemaining,
+    required this.visitCommissionPercent,
+    required this.commissionPaise,
+    required this.proCreditPaise,
+    this.label,
+  });
+
+  final bool isFreeBooking;
+  final int freeBookingsRemaining;
+  final int visitCommissionPercent;
+  final int commissionPaise;
+  final int proCreditPaise;
+  final String? label;
 }
 
 class JobOffer {
@@ -129,6 +156,7 @@ class JobOffer {
     required this.visitFeePaise,
     required this.preferredTime,
     required this.expiresAt,
+    this.commissionPreview,
   });
 
   final String id;
@@ -141,6 +169,7 @@ class JobOffer {
   final int visitFeePaise;
   final DateTime preferredTime;
   final DateTime expiresAt;
+  final CommissionPreview? commissionPreview;
 }
 
 class ActiveJob {
@@ -160,6 +189,8 @@ class ActiveJob {
     this.finalAmountPaise,
     this.customerLat,
     this.customerLng,
+    this.commissionPreview,
+    this.proCreditPaise,
   });
 
   final String id;
@@ -177,10 +208,14 @@ class ActiveJob {
   final int? finalAmountPaise;
   final double? customerLat;
   final double? customerLng;
+  final CommissionPreview? commissionPreview;
+  final int? proCreditPaise;
 
   ActiveJob copyWith({
     BookingStatus? status,
     int? finalAmountPaise,
+    CommissionPreview? commissionPreview,
+    int? proCreditPaise,
   }) {
     return ActiveJob(
       id: id,
@@ -196,6 +231,10 @@ class ActiveJob {
       visitFeePaise: visitFeePaise,
       status: status ?? this.status,
       finalAmountPaise: finalAmountPaise ?? this.finalAmountPaise,
+      customerLat: customerLat,
+      customerLng: customerLng,
+      commissionPreview: commissionPreview ?? this.commissionPreview,
+      proCreditPaise: proCreditPaise ?? this.proCreditPaise,
     );
   }
 }
@@ -208,9 +247,21 @@ class EarningsSummary {
     required this.payoutsThisMonthPaise,
     required this.pendingPayoutPaise,
     required this.jobsToday,
+    this.walletBalancePaise = 0,
     this.ratingAvg,
     this.ratingCount,
     this.jobsCompleted,
+    this.visitCommissionPercent = 5,
+    this.freeBookingLimit = 5,
+    this.freeBookingsUsed = 0,
+    this.freeBookingsRemaining = 5,
+    this.listingHeld = false,
+    this.commissionTodayPaise = 0,
+    this.commissionNote,
+    this.platformFeeDuePaise = 0,
+    this.companyUpiId,
+    this.companyUpiName,
+    this.companyUpiPayUri,
   });
 
   final int todayPaise;
@@ -219,9 +270,52 @@ class EarningsSummary {
   final int payoutsThisMonthPaise;
   final int pendingPayoutPaise;
   final int jobsToday;
+  /// Available balance = credited jobs not yet paid out.
+  final int walletBalancePaise;
   final double? ratingAvg;
   final int? ratingCount;
   final int? jobsCompleted;
+  final int visitCommissionPercent;
+  final int freeBookingLimit;
+  final int freeBookingsUsed;
+  final int freeBookingsRemaining;
+  final bool listingHeld;
+  final int commissionTodayPaise;
+  final String? commissionNote;
+  final int platformFeeDuePaise;
+  final String? companyUpiId;
+  final String? companyUpiName;
+  final String? companyUpiPayUri;
+}
+
+class CreditHistoryItem {
+  CreditHistoryItem({
+    required this.id,
+    required this.bookingCode,
+    required this.categoryCode,
+    required this.creditPaise,
+    required this.visitFeePaise,
+    required this.commissionPaise,
+    required this.commissionWaived,
+    required this.platformFeePaid,
+    this.finalAmountPaise,
+    this.utr,
+    this.completedAt,
+    this.label,
+  });
+
+  final String id;
+  final String bookingCode;
+  final String categoryCode;
+  final int creditPaise;
+  final int visitFeePaise;
+  final int commissionPaise;
+  final bool commissionWaived;
+  final bool platformFeePaid;
+  final int? finalAmountPaise;
+  final String? utr;
+  final DateTime? completedAt;
+  final String? label;
 }
 
 /// ─── Customer-side models ──────────────────────────────────────────────
@@ -291,6 +385,23 @@ class BookingTrackingStep {
   final String state;
 }
 
+/// Live technician location while en route (from API `tracking` object).
+class BookingLiveTracking {
+  const BookingLiveTracking({
+    required this.proLat,
+    required this.proLng,
+    required this.distanceKm,
+    required this.etaMinutes,
+    this.updatedAt,
+  });
+
+  final double proLat;
+  final double proLng;
+  final double distanceKm;
+  final int etaMinutes;
+  final DateTime? updatedAt;
+}
+
 class CustomerBooking {
   CustomerBooking({
     required this.id,
@@ -304,6 +415,7 @@ class CustomerBooking {
     required this.status,
     required this.createdAt,
     this.scheduledAt,
+    this.acceptedAt,
     this.rating,
     this.addressLat,
     this.addressLng,
@@ -315,6 +427,9 @@ class CustomerBooking {
     this.trackingSteps = const [],
     this.professionalPhoneE164,
     this.professionalPhoneMasked,
+    this.visitFeePaid = false,
+    this.visitFeePaymentMethod,
+    this.tracking,
   });
   final int id;
   final int professionalId;
@@ -327,6 +442,7 @@ class CustomerBooking {
   final String status;
   final DateTime createdAt;
   final DateTime? scheduledAt;
+  final DateTime? acceptedAt;
   final BookingRating? rating;
   final double? addressLat;
   final double? addressLng;
@@ -338,9 +454,26 @@ class CustomerBooking {
   final List<BookingTrackingStep> trackingSteps;
   final String? professionalPhoneE164;
   final String? professionalPhoneMasked;
+  final bool visitFeePaid;
+  final String? visitFeePaymentMethod;
+  final BookingLiveTracking? tracking;
 
-  bool get canComplete => const [
+  /// Show live map + ETA only until work starts (not during repair).
+  bool get isTrackable => const ['en_route', 'arrived'].contains(status);
+  bool get isInProcess => const [
         'confirmed',
+        'en_route',
+        'arrived',
+        'in_progress',
+        'awaiting_payment',
+      ].contains(status);
+
+  /// Cancel allowed only before technician is on the way.
+  bool get canCancel => status == 'confirmed';
+  bool get canPayVisitFee => !visitFeePaid && status == 'awaiting_payment';
+  bool get canComplete =>
+      visitFeePaid &&
+      const [
         'en_route',
         'arrived',
         'in_progress',

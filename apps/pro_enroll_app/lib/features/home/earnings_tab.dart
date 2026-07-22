@@ -6,6 +6,7 @@ import '../../core/i18n.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../data/api/api_exception.dart';
+import '../../data/models.dart';
 import '../../state/app_state.dart';
 import '../shared/widgets.dart';
 
@@ -126,6 +127,8 @@ class EarningsTab extends ConsumerWidget {
                   proScore: profile.proScore,
                   visitFeePaise: profile.visitFeePaise,
                 ),
+                const SizedBox(height: 14),
+                _CommissionCreditCard(earnings: e),
                 const SizedBox(height: 14),
                 Container(
                   padding: const EdgeInsets.all(20),
@@ -283,8 +286,8 @@ class EarningsTab extends ConsumerWidget {
                             Expanded(
                               child: _PayoutStat(
                                 label: l.t('earnings.pending'),
-                                value: formatPaise(e.pendingPayoutPaise),
-                                icon: Icons.hourglass_top_rounded,
+                                value: formatPaise(e.walletBalancePaise),
+                                icon: Icons.account_balance_wallet_outlined,
                                 color: AppTheme.brandAccent,
                               ),
                             ),
@@ -426,6 +429,119 @@ class EarningsTab extends ConsumerWidget {
   }
 }
 
+class _CommissionCreditCard extends StatelessWidget {
+  const _CommissionCreditCard({required this.earnings});
+
+  final EarningsSummary earnings;
+
+  @override
+  Widget build(BuildContext context) {
+    final freeLeft = earnings.freeBookingsRemaining;
+    final inFreeWindow = freeLeft > 0 && !earnings.listingHeld;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.account_balance_wallet_outlined,
+                  color: AppTheme.brandPrimary, size: 22),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Your visit-fee credit',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            earnings.commissionNote ??
+                (inFreeWindow
+                    ? 'Free booking window: $freeLeft of ${earnings.freeBookingLimit} left. Full visit fee goes to your wallet.'
+                    : 'Pay ${earnings.visitCommissionPercent}% platform fee to company UPI. Full visit fee is credited to your wallet.'),
+            style: const TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 13,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (earnings.listingHeld) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'Listing on hold after free bookings. Contact support to continue.',
+              style: TextStyle(
+                color: AppTheme.brandDanger,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ],
+          if (earnings.commissionTodayPaise > 0) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Today credited',
+                    style: TextStyle(
+                      color: AppTheme.textMuted,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+                Text(
+                  formatPaise(earnings.todayPaise),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.brandPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Today platform fee',
+                    style: TextStyle(
+                      color: AppTheme.textMuted,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+                Text(
+                  formatPaise(earnings.commissionTodayPaise),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _PerformanceOverview extends StatelessWidget {
   const _PerformanceOverview({
     required this.l,
@@ -468,7 +584,7 @@ class _PerformanceOverview extends StatelessWidget {
                 Expanded(
                   child: _MetricTile(
                     icon: Icons.star_rounded,
-                    iconColor: Colors.amber.shade700,
+                    iconColor: AppTheme.brandAccentDark,
                     label: l.t('profile.rating'),
                     value: ratingCount > 0
                         ? ratingAvg.toStringAsFixed(1)

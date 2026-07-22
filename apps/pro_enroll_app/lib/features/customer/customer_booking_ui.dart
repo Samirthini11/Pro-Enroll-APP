@@ -5,6 +5,22 @@ import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../shared/widgets.dart';
 
+/// Active booking with the same professional and service category, if any.
+CustomerBooking? findActiveBookingWithPro(
+  List<CustomerBooking> bookings, {
+  required int professionalId,
+  required String categoryCode,
+}) {
+  for (final b in bookings) {
+    if (b.professionalId == professionalId &&
+        b.categoryCode == categoryCode &&
+        b.isInProcess) {
+      return b;
+    }
+  }
+  return null;
+}
+
 /// Human-readable distance from haversine km (API).
 String formatDistanceKm(double? km) {
   if (km == null) return 'Distance unavailable';
@@ -16,8 +32,8 @@ String formatDistanceKm(double? km) {
 Color customerStatusColor(String status) {
   return switch (status) {
     'completed' => AppTheme.brandSuccess,
-    'cancelled' => Colors.red,
-    'awaiting_payment' => Colors.orange,
+    'cancelled' => AppTheme.brandDanger,
+    'awaiting_payment' => AppTheme.brandWarning,
     'en_route' || 'arrived' || 'in_progress' => AppTheme.brandPrimary,
     _ => AppTheme.brandPrimary,
   };
@@ -57,9 +73,6 @@ class BookingAmountSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasFinal = booking.hasFinalAmount;
-    final amount = booking.displayAmountPaise;
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -71,19 +84,52 @@ class BookingAmountSummary extends StatelessWidget {
             _AmountRow(
               label: 'Visit fee',
               value: formatPaise(booking.visitFeePaise),
-              muted: hasFinal,
             ),
-            if (hasFinal) ...[
-              const SizedBox(height: 8),
-              _AmountRow(
-                label: 'Final amount',
-                value: formatPaise(booking.finalAmountPaise!),
-                highlight: true,
+            if (booking.visitFeePaid) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, size: 16, color: AppTheme.brandSuccess),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Paid in app${booking.visitFeePaymentMethod != null ? ' · ${booking.visitFeePaymentMethod!.toUpperCase()}' : ''}',
+                    style: const TextStyle(
+                      color: AppTheme.brandSuccess,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-            ] else if (booking.status != 'cancelled' && booking.status != 'completed') ...[
+            ] else if (booking.status != 'cancelled') ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(
+                    booking.canPayVisitFee ? Icons.payment : Icons.schedule,
+                    size: 16,
+                    color: booking.canPayVisitFee ? AppTheme.brandWarning : AppTheme.textMuted,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      booking.canPayVisitFee
+                          ? 'Pay visit fee now to complete this booking'
+                          : 'Pay visit fee after work is done',
+                      style: TextStyle(
+                        color: booking.canPayVisitFee ? AppTheme.brandWarning : AppTheme.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (booking.status != 'cancelled' && booking.status != 'completed') ...[
               const SizedBox(height: 8),
-              Text(
-                'Final amount will be set after the technician completes the job.',
+              const Text(
+                'Visit fee is paid in the app after the job. Repair cost is settled with the technician.',
                 style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
               ),
             ],
@@ -92,11 +138,11 @@ class BookingAmountSummary extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  hasFinal || booking.status == 'completed' ? 'Total due' : 'Estimated total',
+                  booking.status == 'completed' ? 'Total due' : 'Visit fee total',
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                 ),
                 Text(
-                  formatPaise(amount),
+                  formatPaise(booking.visitFeePaise),
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 18,
@@ -201,7 +247,7 @@ class _TrackingRow extends StatelessWidget {
     final isDone = step.state == 'done';
     final isActive = step.state == 'active';
     final color = isCancelled && isActive
-        ? Colors.red
+        ? AppTheme.brandDanger
         : isDone
             ? AppTheme.brandSuccess
             : isActive
@@ -332,7 +378,7 @@ class CustomerBookingListTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    formatPaise(booking.displayAmountPaise),
+                    formatPaise(booking.visitFeePaise),
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 14,
@@ -340,9 +386,9 @@ class CustomerBookingListTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    booking.hasFinalAmount ? 'Final' : 'Est.',
-                    style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                  const Text(
+                    'Visit fee',
+                    style: TextStyle(fontSize: 10, color: AppTheme.textMuted),
                   ),
                 ],
               ),

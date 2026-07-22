@@ -30,6 +30,7 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
 
     return AppPage(
       title: 'My Bookings',
+      fallbackRoute: Routes.customerHome,
       child: state.loading
           ? const Center(child: CircularProgressIndicator())
           : state.bookings.isEmpty

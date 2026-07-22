@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../../core/app_config.dart';
 import '../jwt_token_service.dart';
@@ -9,20 +12,58 @@ import 'ifree_cookie_solver.dart';
 
 class ApiClient {
   ApiClient(this._tokens, {http.Client? httpClient})
-      : _http = httpClient ?? http.Client();
+      : _ownsClient = httpClient == null,
+        _http = httpClient ?? _createHttpClient();
 
   final JwtTokenService _tokens;
-  final http.Client _http;
+  final bool _ownsClient;
+  http.Client _http;
   final IFreeCookieSolver _ifreeSolver = IFreeCookieSolver();
 
+  static const Duration _requestTimeout = Duration(seconds: 30);
+  static const int _maxNetworkAttempts = 3;
+
   String get _base => AppConfig.apiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+
+  static http.Client _createHttpClient() {
+    final inner = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 20)
+      ..idleTimeout = const Duration(seconds: 15)
+      ..autoUncompress = true;
+    return IOClient(inner);
+  }
+
+  void _resetHttpClient() {
+    if (!_ownsClient) return;
+    try {
+      _http.close();
+    } catch (_) {}
+    _http = _createHttpClient();
+  }
+
+  /// Opens a cheap connection so the first user action (OTP etc.) is not cold.
+  Future<void> warmUp() async {
+    try {
+      await get('/v1/screens/splash', auth: false);
+    } catch (_) {
+      // Best-effort only — ignore failures.
+    }
+  }
 
   Future<Map<String, dynamic>> get(
     String path, {
     bool auth = true,
+    /// Send Bearer token when present; do not fail if logged out.
+    bool authIfAvailable = false,
     Map<String, String>? query,
   }) =>
-      _request('GET', path, auth: auth, query: query);
+      _request(
+        'GET',
+        path,
+        auth: auth,
+        authIfAvailable: authIfAvailable,
+        query: query,
+      );
 
   Future<Map<String, dynamic>> post(
     String path, {
@@ -42,6 +83,7 @@ class ApiClient {
     String method,
     String path, {
     required bool auth,
+    bool authIfAvailable = false,
     Map<String, String>? query,
     Map<String, dynamic>? body,
     bool retried = false,
@@ -50,23 +92,28 @@ class ApiClient {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      // Avoid stale keep-alive sockets that fail the first hit after idle.
+      'Connection': 'close',
     };
 
-    if (auth) {
+    if (auth || authIfAvailable) {
       final token = await _tokens.getAccessToken();
       if (token == null || token.isEmpty) {
-        throw ApiException('Sign in required for API calls', code: 'no_token');
+        if (auth && !authIfAvailable) {
+          throw ApiException('Sign in required for API calls', code: 'no_token');
+        }
+      } else {
+        headers['Authorization'] = 'Bearer $token';
       }
-      headers['Authorization'] = 'Bearer $token';
     }
 
     _ifreeSolver.applyToHeaders(headers);
 
     late http.Response response;
     try {
-      response = await _send(method, uri, headers, body);
+      response = await _sendWithNetworkRetry(method, uri, headers, body);
       response = await _maybeRetryAfterChallenge(method, uri, headers, body, response);
-    } on http.ClientException catch (e) {
+    } on http.ClientException catch (_) {
       throw ApiException(
         'Cannot reach API at $_base. Live: ${AppConfig.liveApiBaseUrl} | '
         'Local: ${AppConfig.localApiBaseUrl}',
@@ -113,6 +160,7 @@ class ApiClient {
             method,
             path,
             auth: auth,
+            authIfAvailable: authIfAvailable,
             query: query,
             body: body,
             retried: true,
@@ -132,6 +180,44 @@ class ApiClient {
     return {'value': data};
   }
 
+  Future<http.Response> _sendWithNetworkRetry(
+    String method,
+    Uri uri,
+    Map<String, String> headers,
+    Map<String, dynamic>? body,
+  ) async {
+    Object? lastError;
+    for (var attempt = 1; attempt <= _maxNetworkAttempts; attempt++) {
+      try {
+        return await _send(method, uri, headers, body);
+      } on TimeoutException catch (e) {
+        lastError = e;
+      } on SocketException catch (e) {
+        lastError = e;
+      } on http.ClientException catch (e) {
+        lastError = e;
+      } on HandshakeException catch (e) {
+        lastError = e;
+      } on TlsException catch (e) {
+        lastError = e;
+      }
+
+      _resetHttpClient();
+      if (attempt < _maxNetworkAttempts) {
+        await Future<void>.delayed(Duration(milliseconds: 350 * attempt));
+      }
+    }
+
+    if (lastError is TimeoutException) {
+      throw ApiException(
+        'Request timed out talking to $_base. Please try again.',
+        code: 'network',
+      );
+    }
+    throw lastError ??
+        ApiException('Cannot reach API at $_base', code: 'network');
+  }
+
   Future<http.Response> _maybeRetryAfterChallenge(
     String method,
     Uri uri,
@@ -149,12 +235,12 @@ class ApiClient {
     }
 
     _ifreeSolver.applyToHeaders(headers);
-    var retried = await _send(method, uri, headers, body);
+    var retried = await _sendWithNetworkRetry(method, uri, headers, body);
     if (_ifreeSolver.isChallengePage(retried)) {
       final withFlag = uri.replace(
         queryParameters: {...uri.queryParameters, 'i': '1'},
       );
-      retried = await _send(method, withFlag, headers, body);
+      retried = await _sendWithNetworkRetry(method, withFlag, headers, body);
     }
     return retried;
   }
@@ -167,17 +253,23 @@ class ApiClient {
   ) async {
     switch (method) {
       case 'GET':
-        return _http.get(uri, headers: headers).timeout(
-          const Duration(seconds: 15),
-        );
+        return _http.get(uri, headers: headers).timeout(_requestTimeout);
       case 'POST':
         return _http
-            .post(uri, headers: headers, body: body == null ? null : jsonEncode(body))
-            .timeout(const Duration(seconds: 15));
+            .post(
+              uri,
+              headers: headers,
+              body: body == null ? null : jsonEncode(body),
+            )
+            .timeout(_requestTimeout);
       case 'PUT':
         return _http
-            .put(uri, headers: headers, body: body == null ? null : jsonEncode(body))
-            .timeout(const Duration(seconds: 15));
+            .put(
+              uri,
+              headers: headers,
+              body: body == null ? null : jsonEncode(body),
+            )
+            .timeout(_requestTimeout);
       default:
         throw ApiException('Unsupported method $method');
     }
@@ -191,16 +283,16 @@ class ApiClient {
 
     try {
       final uri = Uri.parse('$_base/v1/auth/refresh');
-      final response = await _http
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: jsonEncode({'refresh_token': refresh}),
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await _sendWithNetworkRetry(
+        'POST',
+        uri,
+        {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Connection': 'close',
+        },
+        {'refresh_token': refresh},
+      );
 
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       if (decoded['success'] != true) {
@@ -224,5 +316,9 @@ class ApiClient {
     }
   }
 
-  void dispose() => _http.close();
+  void dispose() {
+    if (_ownsClient) {
+      _http.close();
+    }
+  }
 }

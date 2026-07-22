@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../core/constants.dart';
+import '../../core/ist_time.dart';
 import '../jwt_token_service.dart';
 import '../models.dart';
 import '../repository.dart';
@@ -16,6 +17,8 @@ class ApiRepository implements ProRepository {
   final ApiClient _client;
   final JwtTokenService tokens;
   final AuthApi _auth;
+
+  Future<void> warmUp() => _client.warmUp();
 
   @override
   Future<OtpSendResult> sendOtp(String phone, {required String mode}) =>
@@ -256,11 +259,23 @@ class ApiRepository implements ProRepository {
   }
 
   @override
-  Future<void> completeActiveJob(int finalAmountPaise) async {
-    await _client.post(
+  Future<void> pingActiveJobLocation({required double lat, required double lng}) async {
+    await _client.put(
       '/v1/screens/job-active',
-      body: {'final_amount_paise': finalAmountPaise},
+      body: {'lat': lat, 'lng': lng},
     );
+  }
+
+  @override
+  Future<ActiveJob?> completeActiveJob(int finalAmountPaise) async {
+    // Temporary: visit fee only — do not persist final amount.
+    final data = await _client.post(
+      '/v1/screens/job-active',
+      body: const {'action': 'complete'},
+    );
+    final job = data['active_job'];
+    if (job is Map<String, dynamic>) return activeJobFromApi(job);
+    return null;
   }
 
   @override
@@ -274,6 +289,36 @@ class ApiRepository implements ProRepository {
     if (data['rating_avg'] != null) merged['rating_avg'] = data['rating_avg'];
     if (data['rating_count'] != null) merged['rating_count'] = data['rating_count'];
     if (data['jobs_completed'] != null) merged['jobs_completed'] = data['jobs_completed'];
+    if (data['listing_held'] != null) merged['listing_held'] = data['listing_held'];
+    if (data['free_bookings_used'] != null) {
+      merged['free_bookings_used'] = data['free_bookings_used'];
+    }
+    return earningsFromApi(merged);
+  }
+
+  @override
+  Future<List<CreditHistoryItem>> fetchCreditHistory() async {
+    final data = await _client.get('/v1/screens/home-earnings');
+    return creditHistoryFromApi(data['credit_history']);
+  }
+
+  @override
+  Future<EarningsSummary> markPlatformFeePaid({required String utr}) async {
+    final data = await _client.post(
+      '/v1/screens/home-earnings',
+      body: {
+        'action': 'mark_platform_fee_paid',
+        'utr': utr,
+      },
+    );
+    final summary = data['summary'];
+    if (summary is! Map<String, dynamic>) {
+      throw StateError('markPlatformFeePaid: missing summary');
+    }
+    final merged = Map<String, dynamic>.from(summary);
+    if (data['rating_avg'] != null) merged['rating_avg'] = data['rating_avg'];
+    if (data['rating_count'] != null) merged['rating_count'] = data['rating_count'];
+    if (data['jobs_completed'] != null) merged['jobs_completed'] = data['jobs_completed'];
     return earningsFromApi(merged);
   }
 
@@ -282,6 +327,14 @@ class ApiRepository implements ProRepository {
     await _client.put(
       '/v1/screens/home-profile',
       body: {'is_available': isAvailable},
+    );
+  }
+
+  @override
+  Future<void> pingPresence() async {
+    await _client.put(
+      '/v1/screens/home-profile',
+      body: const {'heartbeat': true},
     );
   }
 
@@ -301,7 +354,12 @@ class ApiRepository implements ProRepository {
     if (lat != null) q['lat'] = lat.toString();
     if (lng != null) q['lng'] = lng.toString();
 
-    final data = await _client.get('/v1/customer/pros/search', auth: false, query: q);
+    final data = await _client.get(
+      '/v1/customer/pros/search',
+      auth: false,
+      authIfAvailable: true,
+      query: q,
+    );
     final list = data['pros'] ?? data['professionals'] ?? data['value'];
     if (list is! List) return [];
     return [
@@ -351,16 +409,19 @@ class ApiRepository implements ProRepository {
     DateTime? scheduledAt,
     double? addressLat,
     double? addressLng,
+    int? visitFeePaise,
+    bool visitFeePaid = false,
+    String? visitFeePaymentMethod,
   }) async {
-    final scheduled = scheduledAt ?? DateTime.now().add(const Duration(hours: 1));
-    final local = scheduled.toLocal();
+    final scheduled = scheduledAt ?? DateTime.now().toUtc().add(const Duration(hours: 1));
+    final ist = IstTime.wallClock(scheduled);
     final scheduledStr =
-        '${local.year.toString().padLeft(4, '0')}-'
-        '${local.month.toString().padLeft(2, '0')}-'
-        '${local.day.toString().padLeft(2, '0')} '
-        '${local.hour.toString().padLeft(2, '0')}:'
-        '${local.minute.toString().padLeft(2, '0')}:'
-        '${local.second.toString().padLeft(2, '0')}';
+        '${ist.year.toString().padLeft(4, '0')}-'
+        '${ist.month.toString().padLeft(2, '0')}-'
+        '${ist.day.toString().padLeft(2, '0')}T'
+        '${ist.hour.toString().padLeft(2, '0')}:'
+        '${ist.minute.toString().padLeft(2, '0')}:'
+        '${ist.second.toString().padLeft(2, '0')}+05:30';
     final body = <String, dynamic>{
       'professional_id': professionalId,
       'category_code': categoryCode,
@@ -368,6 +429,9 @@ class ApiRepository implements ProRepository {
       'address_text': addressText,
       'city_id': cityId,
       'scheduled_at': scheduledStr,
+      'visit_fee_paid': visitFeePaid,
+      if (visitFeePaymentMethod != null) 'visit_fee_payment_method': visitFeePaymentMethod,
+      if (visitFeePaise != null) 'visit_fee_paise': visitFeePaise,
       if (addressLat != null) 'address_lat': addressLat,
       if (addressLng != null) 'address_lng': addressLng,
     };
@@ -387,8 +451,27 @@ class ApiRepository implements ProRepository {
   }
 
   @override
+  Future<void> cancelBooking(int bookingId) async {
+    await _client.post('/v1/customer/bookings/$bookingId/cancel');
+  }
+
+  @override
   Future<void> completeBooking(int bookingId) async {
     await _client.post('/v1/customer/bookings/$bookingId/complete');
+  }
+
+  @override
+  Future<CustomerBooking> payVisitFee(
+    int bookingId, {
+    String paymentMethod = 'upi',
+  }) async {
+    final data = await _client.post(
+      '/v1/customer/bookings/$bookingId/pay-visit-fee',
+      body: {'visit_fee_payment_method': paymentMethod},
+    );
+    final booking = data['booking'] ?? data;
+    if (booking is Map<String, dynamic>) return customerBookingFromApi(booking);
+    throw StateError('payVisitFee: unexpected response');
   }
 
   @override
@@ -429,40 +512,29 @@ class ApiRepository implements ProRepository {
     String platform = 'android',
     AppRole? role,
   }) async {
-    final roles = role != null
-        ? [role]
-        : [AppRole.professional, AppRole.customer];
-    final originalRole = await tokens.getActiveRole();
-
-    try {
-      for (final r in roles) {
-        if (!await tokens.hasTokenForRole(r)) continue;
-        await tokens.setActiveRole(r);
-        final data = await _client.post(
-          '/v1/device/push-token',
-          body: {
-            'fcm_token': fcmToken,
-            'platform': platform,
-            'role': r == AppRole.customer ? 'customer' : 'professional',
-            'device_label': 'ProConnect App',
-          },
+    final data = await _client.post(
+      '/v1/device/push-token',
+      body: {
+        'fcm_token': fcmToken,
+        'platform': platform,
+        'register_all_roles': true,
+        if (role != null)
+          'role': role == AppRole.customer ? 'customer' : 'professional',
+        'device_label': 'ProConnect App',
+      },
+    );
+    if (kDebugMode) {
+      final roles = data['roles'];
+      final configured = data['fcm_configured'] == true;
+      debugPrint(
+        '[FCM] registered roles=$roles server_fcm=${configured ? 'ready' : 'NOT_CONFIGURED'}',
+      );
+      if (!configured) {
+        debugPrint(
+          '[FCM] WARNING: upload config/firebase-service-account.json to VPS '
+          'or booking alerts will not send from the API.',
         );
-        if (kDebugMode) {
-          final configured = data['fcm_configured'] == true;
-          debugPrint(
-            '[FCM] registered role=${r.name} auth_uid=${data['auth_uid']} '
-            'server_fcm=${configured ? 'ready' : 'NOT_CONFIGURED'}',
-          );
-          if (!configured) {
-            debugPrint(
-              '[FCM] WARNING: server missing firebase-service-account.json — '
-              'pushes will not be delivered until VPS config is fixed.',
-            );
-          }
-        }
       }
-    } finally {
-      await tokens.setActiveRole(originalRole);
     }
   }
 }

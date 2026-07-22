@@ -18,8 +18,13 @@ class AppTheme {
   static const Color brandPrimaryDark = Color(0xFF1E40AF); // indigo-800
   static const Color brandPrimaryLight = Color(0xFFEFF4FF); // indigo-50ish
   static const Color brandAccent = Color(0xFFF59E0B); // amber-500
+  static const Color brandAccentDark = Color(0xFFD97706); // amber-600
+  static const Color brandAccentText = Color(0xFFB45309); // amber-700
+  static const Color brandAccentLight = Color(0xFFFEF3C7); // amber-100
+  static const Color brandAccentBorder = Color(0xFFFDE68A); // amber-200
   static const Color brandSuccess = Color(0xFF059669); // emerald-600
   static const Color brandDanger = Color(0xFFDC2626); // red-600
+  static const Color brandWarning = brandAccentDark;
 
   // ── Neutral palette ─────────────────────────────────────────────────
   static const Color surface = Color(0xFFF6F8FB); // very light blue-grey
@@ -37,23 +42,44 @@ class AppTheme {
   static const double radiusLg = 18;
   static const double radiusXl = 24;
 
+  /// Fixed palette — avoids `fromSeed` drift across Android/iOS/OEM themes.
+  static const ColorScheme lightColorScheme = ColorScheme(
+    brightness: Brightness.light,
+    primary: brandPrimary,
+    onPrimary: Colors.white,
+    primaryContainer: brandPrimaryLight,
+    onPrimaryContainer: brandPrimaryDark,
+    secondary: brandAccent,
+    onSecondary: Colors.white,
+    secondaryContainer: brandAccentLight,
+    onSecondaryContainer: brandAccentText,
+    tertiary: brandSuccess,
+    onTertiary: Colors.white,
+    error: brandDanger,
+    onError: Colors.white,
+    surface: surface,
+    onSurface: textPrimary,
+    onSurfaceVariant: textMuted,
+    outline: border,
+    outlineVariant: borderStrong,
+    shadow: Color(0x1A0F172A),
+    scrim: Color(0x990F172A),
+    inverseSurface: textPrimary,
+    onInverseSurface: Colors.white,
+    inversePrimary: brandPrimaryLight,
+    surfaceTint: Colors.transparent,
+  );
+
   static ThemeData light() {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: brandPrimary,
-      brightness: Brightness.light,
-      primary: brandPrimary,
-      onPrimary: Colors.white,
-      primaryContainer: brandPrimaryLight,
-      onPrimaryContainer: brandPrimaryDark,
-      surface: surface,
-      onSurface: textPrimary,
-      error: brandDanger,
-    );
+    const colorScheme = lightColorScheme;
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: surface,
+      canvasColor: surface,
+      cardColor: surfaceContainer,
+      dividerColor: border,
       splashFactory: InkSparkle.splashFactory,
       visualDensity: VisualDensity.standard,
       appBarTheme: const AppBarTheme(
@@ -239,17 +265,7 @@ class AppTheme {
     );
   }
 
-  static ThemeData dark() {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: brandPrimary,
-      brightness: Brightness.dark,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: colorScheme,
-      textTheme: _textTheme(Colors.white),
-    );
-  }
+  static ThemeData dark() => light();
 
   static OutlineInputBorder _inputBorder(Color color, {double width = 1}) {
     return OutlineInputBorder(

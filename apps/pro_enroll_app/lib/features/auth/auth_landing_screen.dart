@@ -11,11 +11,7 @@ import '../../state/app_state.dart';
 import '../../state/locale_state.dart';
 import 'auth_flow.dart';
 
-/// First screen the user lands on after the splash. Shows the brand,
-/// the value props in a compact list, and the two primary actions:
-///
-///   • **Sign in** — for pros already enrolled (skips onboarding).
-///   • **Create account** — for new pros (runs the enrollment flow).
+/// Landing: Sign in as Professional, or book as Customer.
 class AuthLandingScreen extends ConsumerWidget {
   const AuthLandingScreen({super.key});
 
@@ -29,7 +25,9 @@ class AuthLandingScreen extends ConsumerWidget {
         child: ContentMaxWidth(
           child: Padding(
             padding: EdgeInsets.symmetric(
-                horizontal: context.pageHPadding, vertical: 12),
+              horizontal: context.pageHPadding,
+              vertical: 12,
+            ),
             child: Column(
               children: [
                 Expanded(
@@ -40,76 +38,86 @@ class AuthLandingScreen extends ConsumerWidget {
                       children: [
                         SizedBox(height: compact ? 8 : 16),
                         _BrandHero(compact: compact),
-                        SizedBox(height: compact ? 18 : 24),
-                        _ValueBullet(
-                          icon: Icons.verified_user,
-                          title: 'Aadhaar + selfie verified',
-                          body:
-                              'Pros earn the trust badge customers look for.',
+                        SizedBox(height: compact ? 20 : 28),
+                        Text(
+                          'How do you want to continue?',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
                         ),
-                        _ValueBullet(
-                          icon: Icons.location_on,
-                          title: 'Jobs from customers near you',
-                          body:
-                              'Set a 3 – 25 km radius. Work in your locality.',
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Choose your role to sign in securely with OTP.',
+                          style: TextStyle(
+                            color: AppTheme.textMuted,
+                            fontSize: 13.5,
+                            height: 1.35,
+                          ),
                         ),
-                        _ValueBullet(
-                          icon: Icons.currency_rupee,
-                          title: 'Daily payouts to UPI',
-                          body:
-                              'Earnings settle to your UPI / bank every 7 PM.',
+                        SizedBox(height: compact ? 16 : 20),
+                        _RoleCard(
+                          icon: Icons.handyman_rounded,
+                          title: 'Sign in · Professional',
+                          subtitle:
+                              'Accept jobs near you, track earnings, and grow your work.',
+                          accent: AppTheme.brandPrimary,
+                          onTap: () {
+                            ref.read(roleProvider.notifier).state =
+                                AppRole.professional;
+                            ref.read(authProvider.notifier).beginSignIn();
+                            context.push(
+                              Routes.phone,
+                              extra: const AuthFlow(
+                                mode: AuthMode.signIn,
+                                role: AppRole.professional,
+                              ),
+                            );
+                          },
                         ),
+                        const SizedBox(height: 12),
+                        _RoleCard(
+                          icon: Icons.home_repair_service_rounded,
+                          title: 'Need a Service · Customer',
+                          subtitle:
+                              'Book verified local technicians for AC, plumbing, and more.',
+                          accent: AppTheme.brandSuccess,
+                          onTap: () {
+                            ref.read(roleProvider.notifier).state =
+                                AppRole.customer;
+                            ref.read(authProvider.notifier).beginSignIn();
+                            context.push(
+                              Routes.phone,
+                              extra: const AuthFlow(
+                                mode: AuthMode.signIn,
+                                role: AppRole.customer,
+                              ),
+                            );
+                          },
+                        ),
+                        // Enrollment CTA kept for later — hide until re-enabled.
+                        // const SizedBox(height: 12),
+                        // OutlinedButton(
+                        //   onPressed: () async {
+                        //     ref.read(roleProvider.notifier).state =
+                        //         AppRole.professional;
+                        //     await ref.read(authProvider.notifier).beginSignUp();
+                        //     if (context.mounted) {
+                        //       context.push(
+                        //         Routes.phone,
+                        //         extra: const AuthFlow(
+                        //           mode: AuthMode.signUp,
+                        //           role: AppRole.professional,
+                        //         ),
+                        //       );
+                        //     }
+                        //   },
+                        //   child: const Text('Enroll as a Professional'),
+                        // ),
                       ],
                     ),
                   ),
                 ),
-                // Sticky action area.
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    FilledButton(
-                      onPressed: () {
-                        ref.read(roleProvider.notifier).state = AppRole.professional;
-                        ref.read(authProvider.notifier).beginSignIn();
-                        context.push(
-                          Routes.phone,
-                          extra: const AuthFlow(mode: AuthMode.signIn, role: AppRole.professional),
-                        );
-                      },
-                      child: const Text('Sign in as Pro'),
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton(
-                      onPressed: () async {
-                        ref.read(roleProvider.notifier).state = AppRole.professional;
-                        await ref
-                            .read(authProvider.notifier)
-                            .beginSignUp();
-                        if (context.mounted) {
-                          context.push(
-                            Routes.phone,
-                            extra: const AuthFlow(mode: AuthMode.signUp, role: AppRole.professional),
-                          );
-                        }
-                      },
-                      child: const Text('Enroll as a Professional'),
-                    ),
-                    const SizedBox(height: 10),
-                    FilledButton.tonal(
-                      onPressed: () {
-                        ref.read(roleProvider.notifier).state = AppRole.customer;
-                        ref.read(authProvider.notifier).beginSignIn();
-                        context.push(
-                          Routes.phone,
-                          extra: const AuthFlow(mode: AuthMode.signIn, role: AppRole.customer),
-                        );
-                      },
-                      child: const Text('I need a service · Customer'),
-                    ),
-                    const SizedBox(height: 14),
-                    _Footer(currentLang: ref.watch(localeProvider).languageCode),
-                  ],
-                ),
+                _Footer(currentLang: ref.watch(localeProvider).languageCode),
               ],
             ),
           ),
@@ -168,19 +176,19 @@ class _BrandHero extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text(
-            'Welcome to QuickFix',
+            'QuickFix',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 24,
+              fontSize: 26,
               fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
+              letterSpacing: -0.4,
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Book verified local pros. Or enroll as one.',
+            'Trusted local repair services — for professionals and customers.',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.88),
+              color: Colors.white.withValues(alpha: 0.9),
               fontSize: 14,
               height: 1.4,
             ),
@@ -191,55 +199,76 @@ class _BrandHero extends StatelessWidget {
   }
 }
 
-class _ValueBullet extends StatelessWidget {
-  const _ValueBullet({
+class _RoleCard extends StatelessWidget {
+  const _RoleCard({
     required this.icon,
     required this.title,
-    required this.body,
+    required this.subtitle,
+    required this.accent,
+    required this.onTap,
   });
 
   final IconData icon;
   final String title;
-  final String body;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: AppTheme.brandPrimaryLight,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 20, color: AppTheme.brandPrimary),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+            border: Border.all(color: AppTheme.border),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  body,
-                  style: const TextStyle(
-                    color: AppTheme.textMuted,
-                    fontSize: 13.5,
-                    height: 1.4,
-                  ),
+                child: Icon(icon, color: accent, size: 26),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: AppTheme.textMuted,
+                        fontSize: 12.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.arrow_forward_ios_rounded, size: 16, color: accent),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -251,32 +280,35 @@ class _Footer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        TextButton.icon(
-          onPressed: () => _showLanguageSheet(context, ref),
-          icon: const Icon(Icons.translate, size: 16),
-          label: Text(
-            supportedLanguages
-                .firstWhere(
-                  (l) => l.code == currentLang,
-                  orElse: () => supportedLanguages.first,
-                )
-                .nativeLabel,
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          TextButton.icon(
+            onPressed: () => _showLanguageSheet(context, ref),
+            icon: const Icon(Icons.translate, size: 16),
+            label: Text(
+              supportedLanguages
+                  .firstWhere(
+                    (l) => l.code == currentLang,
+                    orElse: () => supportedLanguages.first,
+                  )
+                  .nativeLabel,
+            ),
           ),
-        ),
-        const SizedBox(width: 4),
-        const Text(
-          '·',
-          style: TextStyle(color: AppTheme.textFaint, fontSize: 18),
-        ),
-        const SizedBox(width: 4),
-        TextButton(
-          onPressed: () {},
-          child: const Text('Terms'),
-        ),
-      ],
+          const SizedBox(width: 4),
+          const Text(
+            '·',
+            style: TextStyle(color: AppTheme.textFaint, fontSize: 18),
+          ),
+          const SizedBox(width: 4),
+          TextButton(
+            onPressed: () => context.push(Routes.termsAcceptance, extra: true),
+            child: const Text('Terms'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -300,9 +332,7 @@ class _Footer extends ConsumerWidget {
                 for (final lng in supportedLanguages)
                   ListTile(
                     onTap: () {
-                      ref
-                          .read(localeProvider.notifier)
-                          .setLanguage(lng.code);
+                      ref.read(localeProvider.notifier).setLanguage(lng.code);
                       Navigator.pop(ctx);
                     },
                     contentPadding: EdgeInsets.zero,
@@ -314,9 +344,10 @@ class _Footer extends ConsumerWidget {
                           ? AppTheme.brandPrimary
                           : AppTheme.textFaint,
                     ),
-                    title: Text(lng.nativeLabel,
-                        style:
-                            const TextStyle(fontWeight: FontWeight.w600)),
+                    title: Text(
+                      lng.nativeLabel,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     subtitle: Text(lng.label),
                   ),
               ],

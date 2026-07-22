@@ -157,7 +157,7 @@ class ProfileTab extends ConsumerWidget {
             const SizedBox(height: 10),
             InfoCard(
               icon: Icons.currency_rupee,
-              title: 'Visit fee',
+              title: 'Visiting charge',
               subtitle: '${formatPaise(profile.visitFeePaise)} per visit',
               onTap: () => context.push(Routes.editVisitFee),
             ),

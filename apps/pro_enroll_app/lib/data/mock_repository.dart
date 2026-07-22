@@ -171,10 +171,20 @@ class MockRepository implements ProRepository {
   Future<void> updateActiveJobStatus(BookingStatus status) async => _delay();
 
   @override
-  Future<void> completeActiveJob(int finalAmountPaise) async => _delay();
+  Future<void> pingActiveJobLocation({required double lat, required double lng}) async =>
+      _delay();
+
+  @override
+  Future<ActiveJob?> completeActiveJob(int finalAmountPaise) async {
+    await _delay();
+    return null;
+  }
 
   @override
   Future<void> updateAvailability(bool isAvailable) async => _delay();
+
+  @override
+  Future<void> pingPresence() async => _delay();
 
   // ── KYC ────────────────────────────────────────────────────────────
   @override
@@ -212,9 +222,53 @@ class MockRepository implements ProRepository {
       weekPaise: 420000,
       monthPaise: 1850000,
       payoutsThisMonthPaise: 1620000,
-      pendingPayoutPaise: 23000,
+      pendingPayoutPaise: 230000,
+      walletBalancePaise: 230000,
       jobsToday: 3,
+      platformFeeDuePaise: 1000,
+      companyUpiId: 'sami050699@okaxis',
+      companyUpiName: 'Pro Enroll',
+      companyUpiPayUri:
+          'upi://pay?pa=sami050699%40okaxis&pn=Pro%20Enroll&am=10.00&cu=INR&tn=Platform%20fee',
     );
+  }
+
+  @override
+  Future<EarningsSummary> markPlatformFeePaid({required String utr}) async {
+    await _delay();
+    final e = await fetchEarnings();
+    return EarningsSummary(
+      todayPaise: e.todayPaise,
+      weekPaise: e.weekPaise,
+      monthPaise: e.monthPaise,
+      payoutsThisMonthPaise: e.payoutsThisMonthPaise,
+      pendingPayoutPaise: e.pendingPayoutPaise,
+      walletBalancePaise: e.walletBalancePaise,
+      jobsToday: e.jobsToday,
+      platformFeeDuePaise: 0,
+      companyUpiId: e.companyUpiId,
+      companyUpiName: e.companyUpiName,
+      companyUpiPayUri: e.companyUpiPayUri,
+    );
+  }
+
+  @override
+  Future<List<CreditHistoryItem>> fetchCreditHistory() async {
+    await _delay();
+    return [
+      CreditHistoryItem(
+        id: '1',
+        bookingCode: 'PF-DEMO-1',
+        categoryCode: 'ac',
+        creditPaise: 20000,
+        visitFeePaise: 20000,
+        commissionPaise: 1000,
+        commissionWaived: false,
+        platformFeePaid: false,
+        completedAt: DateTime.now().subtract(const Duration(hours: 2)),
+        label: 'Credit · platform fee due',
+      ),
+    ];
   }
 
   // ── Helpers ────────────────────────────────────────────────────────
@@ -273,6 +327,9 @@ class MockRepository implements ProRepository {
     DateTime? scheduledAt,
     double? addressLat,
     double? addressLng,
+    int? visitFeePaise,
+    bool visitFeePaid = false,
+    String? visitFeePaymentMethod,
   }) async {
     await _delay(seconds: 2);
     return CustomerBooking(
@@ -283,8 +340,10 @@ class MockRepository implements ProRepository {
       problemDescription: problemDescription,
       addressText: addressText,
       cityId: cityId,
-      visitFeePaise: 20000,
-      status: 'pending',
+      visitFeePaise: visitFeePaise ?? 20000,
+      visitFeePaid: visitFeePaid,
+      visitFeePaymentMethod: visitFeePaymentMethod,
+      status: 'confirmed',
       createdAt: DateTime.now(),
       scheduledAt: scheduledAt,
     );
@@ -302,14 +361,42 @@ class MockRepository implements ProRepository {
       addressText: '12, MG Road, White Town, Pondicherry',
       cityId: 1,
       visitFeePaise: 20000,
-      status: 'confirmed',
+      visitFeePaid: false,
+      status: 'awaiting_payment',
       createdAt: DateTime.now().subtract(const Duration(hours: 2)),
     );
   }
 
   @override
+  Future<void> cancelBooking(int bookingId) async {
+    await _delay();
+  }
+
+  @override
   Future<void> completeBooking(int bookingId) async {
     await _delay();
+  }
+
+  @override
+  Future<CustomerBooking> payVisitFee(
+    int bookingId, {
+    String paymentMethod = 'upi',
+  }) async {
+    await _delay();
+    return CustomerBooking(
+      id: bookingId,
+      professionalId: 1,
+      professionalName: 'Ravi Kumar',
+      categoryCode: 'ac',
+      problemDescription: 'AC not cooling',
+      addressText: '12, MG Road, White Town, Pondicherry',
+      cityId: 1,
+      visitFeePaise: 20000,
+      visitFeePaid: true,
+      visitFeePaymentMethod: paymentMethod,
+      status: 'completed',
+      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+    );
   }
 
   @override

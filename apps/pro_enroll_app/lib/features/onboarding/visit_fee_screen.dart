@@ -26,20 +26,23 @@ class _VisitFeeScreenState extends ConsumerState<VisitFeeScreen> {
   int _fee = 150;
   bool _feeLocked = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _applyFeeFromCategories(ref.read(categoriesListProvider));
+    });
+  }
+
   void _applyFeeFromCategories(List<CategoryRef> categories) {
     if (_feeLocked) return;
     final profile = ref.read(profileProvider);
-    final stored = (profile.visitFeePaise / 100).round();
-    if (stored >= 100) {
-      setState(() {
-        _fee = stored;
-        _feeLocked = true;
-      });
-      return;
-    }
-    final suggested = suggestedVisitFeeRupees(
-      categories,
-      profile.skills.map((s) => s.categoryCode),
+    final skillCodes = profile.skills.map((s) => s.categoryCode);
+    if (skillCodes.isEmpty) return;
+
+    final suggested = clampVisitFeeRupees(
+      suggestedVisitFeeRupees(categories, skillCodes),
     );
     setState(() => _fee = suggested);
   }
@@ -51,7 +54,7 @@ class _VisitFeeScreenState extends ConsumerState<VisitFeeScreen> {
       await pn.persistVisitFee();
     } catch (e) {
       if (mounted) {
-        showApiError(context, e, fallback: 'Could not save visit fee.');
+        showApiError(context, e, fallback: 'Could not save visiting charge.');
       }
       return;
     }
@@ -86,6 +89,8 @@ class _VisitFeeScreenState extends ConsumerState<VisitFeeScreen> {
         fee: _fee,
         amountSize: amountSize,
         helper: l.t('onboarding.fee.helper'),
+        chargeLabel: l.t('onboarding.fee.yourCharge'),
+        suggestedHint: l.t('onboarding.fee.suggestedHint'),
         onFeeChanged: (v) => setState(() {
           _fee = v;
           _feeLocked = true;
@@ -114,6 +119,8 @@ class VisitFeeEditor extends StatelessWidget {
     required this.amountSize,
     required this.helper,
     required this.onFeeChanged,
+    this.chargeLabel = 'Your visiting charge',
+    this.suggestedHint,
   });
 
   final String lang;
@@ -123,6 +130,8 @@ class VisitFeeEditor extends StatelessWidget {
   final double amountSize;
   final String helper;
   final ValueChanged<int> onFeeChanged;
+  final String chargeLabel;
+  final String? suggestedHint;
 
   @override
   Widget build(BuildContext context) {
@@ -171,6 +180,7 @@ class VisitFeeEditor extends StatelessWidget {
                       category: cat,
                       lang: lang,
                       compact: true,
+                      visitOnly: true,
                     ),
                   ],
                 ),
@@ -200,7 +210,7 @@ class VisitFeeEditor extends StatelessWidget {
             child: Column(
               children: [
                 Text(
-                  'Your visit fee',
+                  chargeLabel,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.86),
                     fontWeight: FontWeight.w600,
@@ -229,17 +239,23 @@ class VisitFeeEditor extends StatelessWidget {
                 minimumSize: const Size.square(44),
                 shape: const CircleBorder(),
               ),
-              onPressed: fee <= 50 ? null : () => onFeeChanged(fee - 25),
+              onPressed: fee <= visitFeeMinRupees
+                  ? null
+                  : () => onFeeChanged(fee - visitFeeStepRupees),
               icon: const Icon(Icons.remove),
             ),
             Expanded(
               child: Slider(
-                value: fee.toDouble().clamp(50, 500),
-                min: 50,
-                max: 500,
-                divisions: 18,
+                value: fee.toDouble().clamp(
+                  visitFeeMinRupees.toDouble(),
+                  visitFeeMaxRupees.toDouble(),
+                ),
+                min: visitFeeMinRupees.toDouble(),
+                max: visitFeeMaxRupees.toDouble(),
+                divisions:
+                    (visitFeeMaxRupees - visitFeeMinRupees) ~/ visitFeeStepRupees,
                 label: '₹$fee',
-                onChanged: (v) => onFeeChanged(v.round()),
+                onChanged: (v) => onFeeChanged(clampVisitFeeRupees(v.round())),
               ),
             ),
             IconButton.filledTonal(
@@ -247,16 +263,20 @@ class VisitFeeEditor extends StatelessWidget {
                 minimumSize: const Size.square(44),
                 shape: const CircleBorder(),
               ),
-              onPressed: fee >= 500 ? null : () => onFeeChanged(fee + 25),
+              onPressed: fee >= visitFeeMaxRupees
+                  ? null
+                  : () => onFeeChanged(
+                        clampVisitFeeRupees(fee + visitFeeStepRupees),
+                      ),
               icon: const Icon(Icons.add),
             ),
           ],
         ),
         const SizedBox(height: 16),
-        const TrustBanner(
+        TrustBanner(
           icon: Icons.info_outline,
-          text:
-              'Base price and visit fee are loaded from the category API (MySQL).',
+          text: suggestedHint ??
+              'Suggested from your selected services — adjust if needed.',
         ),
       ],
     );
