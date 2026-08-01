@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Live VPS uses HTTP (not HTTPS) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">98.93.105.128</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
