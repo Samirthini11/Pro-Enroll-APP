@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
+import '../../core/i18n.dart';
 import '../../core/location_service.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
@@ -12,21 +15,25 @@ import '../../state/app_state.dart';
 import '../../state/categories_provider.dart';
 import '../../state/locale_state.dart';
 import '../shared/category_price_badges.dart';
+import '../shared/language_picker.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/widgets.dart';
 import 'customer_booking_ui.dart';
 import 'customer_route_params.dart';
 
-final _customerCityProvider = StateProvider<int>((ref) => 1);
-final _customerLatProvider = StateProvider<double?>((ref) => null);
-final _customerLngProvider = StateProvider<double?>((ref) => null);
-final _locationLoadingProvider = StateProvider<bool>((ref) => true);
+final customerCityProvider = StateProvider<int>((ref) => 1);
+final customerLatProvider = StateProvider<double?>((ref) => null);
+final customerLngProvider = StateProvider<double?>((ref) => null);
+final customerLocationLoadingProvider = StateProvider<bool>((ref) => true);
 
 Future<void> refreshCustomerHomeTab(WidgetRef ref) async {
-  await ref.read(customerProvider.notifier).loadProfile();
-  final cityId = ref.read(_customerCityProvider);
-  final lat = ref.read(_customerLatProvider);
-  final lng = ref.read(_customerLngProvider);
+  await Future.wait([
+    ref.read(customerProvider.notifier).loadProfile(),
+    ref.read(customerProvider.notifier).loadBookings(),
+  ]);
+  final cityId = ref.read(customerCityProvider);
+  final lat = ref.read(customerLatProvider);
+  final lng = ref.read(customerLngProvider);
   if (lat != null && lng != null) {
     await ref.read(customerProvider.notifier).searchPros(cityId: cityId, lat: lat, lng: lng);
   } else {
@@ -48,50 +55,66 @@ class _CustomerHomeScreenState extends ConsumerState<CustomerHomeScreen> {
   void initState() {
     super.initState();
     Future.microtask(() async {
-      ref.read(customerProvider.notifier).loadProfile();
-      await ref.read(pushNotificationServiceProvider).syncTokenWithServer();
+      await ref.read(customerProvider.notifier).loadProfile();
+      if (!mounted) return;
+      final profile = ref.read(customerProvider).profile;
+      if (!(profile?.isProfileComplete ?? false)) {
+        context.go(Routes.customerProfileSetup);
+        return;
+      }
+      // Restore saved city before GPS (GPS may override with nearest city).
+      if (profile?.cityId != null && ref.read(customerLatProvider) == null) {
+        ref.read(customerCityProvider.notifier).state = profile!.cityId!;
+      }
+      ref.read(customerProvider.notifier).loadBookings();
       await ref.read(pushNotificationServiceProvider).markReadyAndFlush(
             authenticated: true,
           );
+      unawaited(
+        ref.read(pushNotificationServiceProvider).finishColdStartAndSyncToken(
+              role: ref.read(roleProvider),
+            ),
+      );
       await _detectLocationAndSearch();
     });
   }
 
   Future<void> _detectLocationAndSearch() async {
-    ref.read(_locationLoadingProvider.notifier).state = true;
+    ref.read(customerLocationLoadingProvider.notifier).state = true;
     try {
       final loc = await LocationService.getCurrentLocation()
           .timeout(const Duration(seconds: 8), onTimeout: () => null);
       if (!mounted) return;
 
       if (loc != null) {
-        ref.read(_customerLatProvider.notifier).state = loc.latitude;
-        ref.read(_customerLngProvider.notifier).state = loc.longitude;
-        ref.read(_customerCityProvider.notifier).state = loc.nearestCity.id;
+        ref.read(customerLatProvider.notifier).state = loc.latitude;
+        ref.read(customerLngProvider.notifier).state = loc.longitude;
+        ref.read(customerCityProvider.notifier).state = loc.nearestCity.id;
         await ref.read(customerProvider.notifier).searchPros(
               cityId: loc.nearestCity.id,
               lat: loc.latitude,
               lng: loc.longitude,
             );
       } else {
-        final cityId = ref.read(_customerCityProvider);
+        final cityId = ref.read(customerCityProvider);
         await ref.read(customerProvider.notifier).searchPros(cityId: cityId);
       }
     } catch (e) {
       debugPrint('_detectLocationAndSearch: $e');
       if (mounted) {
-        final cityId = ref.read(_customerCityProvider);
+        final cityId = ref.read(customerCityProvider);
         await ref.read(customerProvider.notifier).searchPros(cityId: cityId);
       }
     } finally {
       if (mounted) {
-        ref.read(_locationLoadingProvider.notifier).state = false;
+        ref.read(customerLocationLoadingProvider.notifier).state = false;
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = ref.watch(lProvider);
     return Scaffold(
       body: IndexedStack(
         index: _tabIndex,
@@ -105,14 +128,26 @@ class _CustomerHomeScreenState extends ConsumerState<CustomerHomeScreen> {
         selectedIndex: _tabIndex,
         onDestinationSelected: (i) {
           setState(() => _tabIndex = i);
-          if (i == 1) {
+          if (i == 0 || i == 1) {
             ref.read(customerProvider.notifier).loadBookings();
           }
         },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.list_alt_outlined), selectedIcon: Icon(Icons.list_alt), label: 'Bookings'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profile'),
+        destinations: [
+          NavigationDestination(
+            icon: const Icon(Icons.home_outlined),
+            selectedIcon: const Icon(Icons.home),
+            label: l.t('customer.tab.home'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.list_alt_outlined),
+            selectedIcon: const Icon(Icons.list_alt),
+            label: l.t('customer.tab.bookings'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
+            label: l.t('customer.tab.profile'),
+          ),
         ],
       ),
     );
@@ -124,15 +159,17 @@ class _HomeTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l = ref.watch(lProvider);
     final profile = ref.watch(customerProvider).profile;
-    final name = profile?.fullName ?? 'there';
+    final rawName = profile?.fullName?.trim() ?? '';
+    final name = rawName.isNotEmpty ? rawName : 'there';
     final hPad = context.pageHPadding;
     final columns = context.gridColumns;
-    final cityId = ref.watch(_customerCityProvider);
+    final cityId = ref.watch(customerCityProvider);
     final city = cityById(cityId);
     final state = ref.watch(customerProvider);
-    final locLoading = ref.watch(_locationLoadingProvider);
-    final hasGps = ref.watch(_customerLatProvider) != null;
+    final locLoading = ref.watch(customerLocationLoadingProvider);
+    final hasGps = ref.watch(customerLatProvider) != null;
     final categories = ref.watch(categoriesListProvider);
     final lang = ref.watch(localeProvider).languageCode;
 
@@ -160,23 +197,56 @@ class _HomeTab extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Hi $name!',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: context.responsive(xs: 18.0, sm: 20.0, md: 22.0),
-                        fontWeight: FontWeight.w800,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            l.t('customer.home.hi', {'name': name}),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: context.responsive(xs: 18.0, sm: 20.0, md: 22.0),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const LanguageChipButton(light: true),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'What do you need fixed?',
+                      l.t('customer.home.need_fixed'),
                       style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 14),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
+
+              // Active work progress (in-process bookings)
+              Builder(
+                builder: (context) {
+                  final active = state.bookings.where((b) => b.isInProcess).toList();
+                  if (active.isEmpty) return const SizedBox.shrink();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(l.t('customer.home.current_work'), style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 10),
+                      for (final b in active.take(3)) ...[
+                        ActiveWorkProgressCard(
+                          booking: b,
+                          onTap: () => context.push(
+                            Routes.customerBookingDetail,
+                            extra: b.id,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      const SizedBox(height: 10),
+                    ],
+                  );
+                },
+              ),
 
               // Location selector
               InkWell(
@@ -209,10 +279,10 @@ class _HomeTab extends ConsumerWidget {
                           children: [
                             Text(
                               locLoading
-                                  ? 'Detecting your location...'
+                                  ? l.t('customer.home.detecting')
                                   : hasGps
-                                      ? 'Using your current location'
-                                      : 'Your location',
+                                      ? l.t('customer.home.using_gps')
+                                      : l.t('customer.home.location'),
                               style: TextStyle(
                                 color: hasGps ? AppTheme.brandSuccess : AppTheme.textMuted,
                                 fontSize: 11,
@@ -231,7 +301,7 @@ class _HomeTab extends ConsumerWidget {
               ),
               const SizedBox(height: 20),
 
-              Text('Services', style: Theme.of(context).textTheme.titleLarge),
+              Text(l.t('customer.home.services'), style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 12),
               GridView.builder(
                 shrinkWrap: true,
@@ -254,8 +324,8 @@ class _HomeTab extends ConsumerWidget {
                       extra: {
                         'city_id': cityId,
                         'category_code': cat.code,
-                        if (hasGps) 'lat': ref.read(_customerLatProvider),
-                        if (hasGps) 'lng': ref.read(_customerLngProvider),
+                        if (hasGps) 'lat': ref.read(customerLatProvider),
+                        if (hasGps) 'lng': ref.read(customerLngProvider),
                       },
                     ),
                   );
@@ -266,13 +336,13 @@ class _HomeTab extends ConsumerWidget {
               // Nearby professionals section
               Row(
                 children: [
-                  Text('Online Professionals', style: Theme.of(context).textTheme.titleLarge),
+                  Text(l.t('customer.home.online_pros'), style: Theme.of(context).textTheme.titleLarge),
                   const Spacer(),
                   TextButton(
                     onPressed: () => context.push(Routes.customerSearch, extra: {
                       'city_id': cityId,
-                      if (hasGps) 'lat': ref.read(_customerLatProvider),
-                      if (hasGps) 'lng': ref.read(_customerLngProvider),
+                      if (hasGps) 'lat': ref.read(customerLatProvider),
+                      if (hasGps) 'lng': ref.read(customerLngProvider),
                     }),
                     child: const Text('View all'),
                   ),
@@ -301,13 +371,14 @@ class _HomeTab extends ConsumerWidget {
                     child: _NearbyProCard(
                       pro: pro,
                       cat: cat,
+                      lang: lang,
                       onTap: () => context.push(
                         Routes.customerProDetail,
                         extra: proDetailExtras(
                           proId: pro.id,
                           categoryCode: pro.categoryCode,
-                          lat: hasGps ? ref.read(_customerLatProvider) : null,
-                          lng: hasGps ? ref.read(_customerLngProvider) : null,
+                          lat: hasGps ? ref.read(customerLatProvider) : null,
+                          lng: hasGps ? ref.read(customerLngProvider) : null,
                         ),
                       ),
                     ),
@@ -323,8 +394,8 @@ class _HomeTab extends ConsumerWidget {
   }
 
   static void _showCityPicker(BuildContext context, WidgetRef ref) {
-    final current = ref.read(_customerCityProvider);
-    final hasGps = ref.read(_customerLatProvider) != null;
+    final current = ref.read(customerCityProvider);
+    final hasGps = ref.read(customerLatProvider) != null;
     showModalBottomSheet<void>(
       context: context,
       builder: (ctx) {
@@ -344,19 +415,19 @@ class _HomeTab extends ConsumerWidget {
                 ListTile(
                   onTap: () async {
                     Navigator.pop(ctx);
-                    ref.read(_locationLoadingProvider.notifier).state = true;
+                    ref.read(customerLocationLoadingProvider.notifier).state = true;
                     final loc = await LocationService.getCurrentLocation();
                     if (loc != null) {
-                      ref.read(_customerLatProvider.notifier).state = loc.latitude;
-                      ref.read(_customerLngProvider.notifier).state = loc.longitude;
-                      ref.read(_customerCityProvider.notifier).state = loc.nearestCity.id;
+                      ref.read(customerLatProvider.notifier).state = loc.latitude;
+                      ref.read(customerLngProvider.notifier).state = loc.longitude;
+                      ref.read(customerCityProvider.notifier).state = loc.nearestCity.id;
                       ref.read(customerProvider.notifier).searchPros(
                         cityId: loc.nearestCity.id,
                         lat: loc.latitude,
                         lng: loc.longitude,
                       );
                     }
-                    ref.read(_locationLoadingProvider.notifier).state = false;
+                    ref.read(customerLocationLoadingProvider.notifier).state = false;
                   },
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.my_location,
@@ -371,12 +442,12 @@ class _HomeTab extends ConsumerWidget {
                 const Divider(),
                 for (final c in supportedCities)
                   ListTile(
-                    onTap: () {
-                      ref.read(_customerCityProvider.notifier).state = c.id;
-                      ref.read(_customerLatProvider.notifier).state = null;
-                      ref.read(_customerLngProvider.notifier).state = null;
-                      ref.read(customerProvider.notifier).searchPros(cityId: c.id);
+                    onTap: () async {
                       Navigator.pop(ctx);
+                      ref.read(customerCityProvider.notifier).state = c.id;
+                      ref.read(customerLatProvider.notifier).state = null;
+                      ref.read(customerLngProvider.notifier).state = null;
+                      await ref.read(customerProvider.notifier).searchPros(cityId: c.id);
                     },
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(
@@ -408,9 +479,15 @@ class _HomeTab extends ConsumerWidget {
 }
 
 class _NearbyProCard extends StatelessWidget {
-  const _NearbyProCard({required this.pro, this.cat, required this.onTap});
+  const _NearbyProCard({
+    required this.pro,
+    this.cat,
+    required this.lang,
+    required this.onTap,
+  });
   final ProSearchResult pro;
   final CategoryRef? cat;
+  final String lang;
   final VoidCallback onTap;
 
   @override
@@ -463,7 +540,7 @@ class _NearbyProCard extends StatelessWidget {
                           ],
                         ),
                         if (cat != null)
-                          Text(cat!.nameEn,
+                          Text(cat!.name(lang),
                               style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                       ],
                     ),
@@ -570,6 +647,7 @@ class _BookingsTabState extends ConsumerState<_BookingsTab> {
     final state = ref.watch(customerProvider);
     final hPad = context.pageHPadding;
     final categories = ref.watch(categoriesListProvider);
+    final lang = ref.watch(localeProvider).languageCode;
 
     return SafeArea(
       child: ContentMaxWidth(
@@ -609,7 +687,7 @@ class _BookingsTabState extends ConsumerState<_BookingsTab> {
                         return CustomerBookingListTile(
                           booking: b,
                           categoryIcon: cat?.icon,
-                          categoryName: cat?.nameEn,
+                          categoryName: cat?.name(lang),
                           onTap: () => context.push(Routes.customerBookingDetail, extra: b.id),
                         );
                       },
@@ -629,10 +707,12 @@ class _ProfileTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l = ref.watch(lProvider);
     final profile = ref.watch(customerProvider).profile;
     final hPad = context.pageHPadding;
-    final cityId = ref.watch(_customerCityProvider);
+    final cityId = ref.watch(customerCityProvider);
     final city = cityById(cityId);
+    final lang = ref.watch(localeProvider).languageCode;
 
     return SafeArea(
       child: ContentMaxWidth(
@@ -644,94 +724,134 @@ class _ProfileTab extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              Text('Profile', style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 20),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      NameInitialAvatar(
-                        name: profile?.fullName,
-                        radius: 28,
-                        fontSize: 22,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              profile?.fullName ?? 'Customer',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              profile?.phoneE164 ?? '',
-                              style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
-                            ),
-                          ],
+                Text(
+                  l.t('customer.profile.title'),
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 20),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        NameInitialAvatar(
+                          name: profile?.fullName,
+                          radius: 28,
+                          fontSize: 22,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.location_on, color: AppTheme.brandPrimary),
-                  title: const Text('Location', style: TextStyle(fontSize: 14)),
-                  subtitle: Text('${city.name}, ${city.state}', style: const TextStyle(fontSize: 12)),
-                  trailing: const Icon(Icons.chevron_right, color: AppTheme.textFaint),
-                  onTap: () => _HomeTab._showCityPicker(context, ref),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.swap_horiz, color: AppTheme.brandPrimary),
-                  title: const Text('Switch to Professional', style: TextStyle(fontSize: 14)),
-                  subtitle: const Text(
-                    'Receive jobs for your enrolled services (AC, Plumber, …)',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  onTap: () async {
-                    final ok = await ref.read(authProvider.notifier).switchRole(
-                          AppRole.professional,
-                        );
-                    if (!context.mounted) return;
-                    if (ok) {
-                      context.go(Routes.home);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            ref.read(authProvider).errorMessage ??
-                                'Enroll as a Pro first, or sign in as professional.',
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                profile?.fullName ?? 'Customer',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                profile?.phoneE164 ?? '',
+                                style: const TextStyle(
+                                  color: AppTheme.textMuted,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      );
-                    }
-                  },
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.logout, color: AppTheme.brandDanger),
-                  title: const Text('Sign Out', style: TextStyle(color: AppTheme.brandDanger, fontSize: 14)),
-                  onTap: () async {
-                    await ref.read(authProvider.notifier).signOut();
-                    if (context.mounted) context.go(Routes.authLanding);
-                  },
+                const SizedBox(height: 12),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.location_on, color: AppTheme.brandPrimary),
+                    title: Text(
+                      l.t('customer.profile.location'),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      '${city.name}, ${city.state}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right, color: AppTheme.textFaint),
+                    onTap: () => _HomeTab._showCityPicker(context, ref),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.translate, color: AppTheme.brandPrimary),
+                    title: Text(
+                      l.t('customer.profile.language'),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      languageNativeLabel(lang),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right, color: AppTheme.textFaint),
+                    onTap: () => showLanguagePicker(context, ref),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.swap_horiz, color: AppTheme.brandPrimary),
+                    title: Text(
+                      l.t('customer.profile.switch_pro'),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      l.t('customer.profile.switch_pro_sub'),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onTap: () async {
+                      final ok = await ref.read(authProvider.notifier).switchRole(
+                            AppRole.professional,
+                          );
+                      if (!context.mounted) return;
+                      if (ok) {
+                        context.go(Routes.home);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ref.read(authProvider).errorMessage ??
+                                  'Enroll as a Pro first, or sign in as professional.',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.logout, color: AppTheme.brandDanger),
+                    title: Text(
+                      l.t('customer.profile.signout'),
+                      style: const TextStyle(
+                        color: AppTheme.brandDanger,
+                        fontSize: 14,
+                      ),
+                    ),
+                    onTap: () async {
+                      await ref.read(authProvider.notifier).signOut();
+                      if (context.mounted) context.go(Routes.authLanding);
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );

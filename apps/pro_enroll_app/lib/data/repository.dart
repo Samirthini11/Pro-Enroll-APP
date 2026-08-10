@@ -47,10 +47,12 @@ abstract class ProRepository {
   Future<void> saveCategories(
     List<String> categoryCodes, {
     Map<String, int>? experienceByCategory,
+    Map<String, int>? experienceStartYearByCategory,
   });
   Future<void> saveExperience({
     required String fullName,
-    required Map<String, int> experienceByCategory,
+    Map<String, int>? experienceByCategory,
+    Map<String, int>? experienceStartYearByCategory,
   });
   Future<void> saveLocation({
     required int cityId,
@@ -58,7 +60,10 @@ abstract class ProRepository {
     double? homeLat,
     double? homeLng,
   });
-  Future<void> saveVisitFeePaise(int visitFeePaise);
+  Future<void> saveVisitFeePaise(
+    int visitFeePaise, {
+    Map<String, int>? feesByCategoryPaise,
+  });
 
   Future<String> initiateAadhaar(String last4);
   Future<bool> verifyAadhaarOtp({required String kycRefId, required String otp});
@@ -68,18 +73,35 @@ abstract class ProRepository {
   Future<void> simulateKycApproval();
 
   Future<List<JobOffer>> fetchOffers(List<String> categoryCodes);
+  /// Offers + job history (+ active) from home-jobs screen.
+  Future<HomeJobsBundle> fetchHomeJobs(List<String> categoryCodes);
   Future<ActiveJob?> fetchActiveJob();
   Future<JobOffer?> fetchOffer(String offerId);
-  Future<ActiveJob> acceptOffer(String offerId);
+  /// Accepts an offer. Fails if another job is still active.
+  Future<AcceptOfferResult> acceptOffer(String offerId);
   Future<void> rejectOffer(String offerId);
   Future<void> updateActiveJobStatus(BookingStatus status);
   Future<void> pingActiveJobLocation({required double lat, required double lng});
   Future<ActiveJob?> completeActiveJob(int finalAmountPaise);
+  /// Pro confirms cash / offline visit fee received → settle job as completed.
+  Future<ActiveJob?> confirmPaymentReceived({String paymentMethod = 'cash'});
+  /// Reject an accepted job while still on the way (before marking arrived).
+  /// [reason] is required when rejecting after heading out (en_route).
+  Future<void> cancelActiveJob({String? reason});
 
   Future<EarningsSummary> fetchEarnings();
   Future<List<CreditHistoryItem>> fetchCreditHistory();
   Future<EarningsSummary> markPlatformFeePaid({required String utr});
-  Future<void> updateAvailability(bool isAvailable);
+  /// Submits a top-up for admin approval; wallet is credited only once approved.
+  Future<EarningsSummary> rechargeWallet({
+    required int amountPaise,
+    required String utr,
+  });
+  Future<List<WalletRechargeRequest>> fetchRechargeRequests();
+  /// Raise a Help request so admin can unlock experience year edits.
+  Future<ProProfile?> requestExperienceEdit({String? reason});
+  /// Returns the updated profile from the server when available.
+  Future<ProProfile?> updateAvailability(bool isAvailable);
 
   /// Keep online presence alive while the pro app is open.
   Future<void> pingPresence();
@@ -138,4 +160,25 @@ class AuthSyncResult {
   final String nextRoute;
   final ProProfile? profile;
   final AppRole? role;
+}
+
+class HomeJobsBundle {
+  const HomeJobsBundle({
+    this.offers = const [],
+    this.history = const [],
+    this.activeJob,
+  });
+
+  final List<JobOffer> offers;
+  final List<ProJobHistoryItem> history;
+  final ActiveJob? activeJob;
+}
+
+/// Result of accepting a job offer.
+class AcceptOfferResult {
+  const AcceptOfferResult({
+    required this.activeJob,
+  });
+
+  final ActiveJob activeJob;
 }

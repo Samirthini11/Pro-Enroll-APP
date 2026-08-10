@@ -75,12 +75,10 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
   Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
     final isSignIn = widget.flow.isSignIn;
-    final title = isSignIn ? 'Sign in' : 'Create your account';
-    final helper = isSignIn
-        ? 'Enter the mobile number you used while enrolling. '
-            'We will send a 6-digit OTP via SMS.'
-        : 'Enter the mobile number we should reach you on. '
-            'We will send a 6-digit OTP via SMS.';
+    final title =
+        isSignIn ? l.t('auth.signin.title') : l.t('auth.signup.title');
+    final helper =
+        isSignIn ? l.t('auth.signin.helper') : l.t('auth.signup.helper');
     return AppPage(
       title: title,
       child: ListView(
@@ -122,18 +120,17 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          const TrustBanner(
+          TrustBanner(
             icon: Icons.shield_outlined,
-            text:
-                'Verified pros only. We use OTP, never store your password.',
+            text: l.t('auth.phone.trust'),
           ),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
               isSignIn
-                  ? "New here? Tap back and choose 'Create account'."
-                  : 'By creating an account you agree to our Terms & Privacy Policy.',
+                  ? l.t('auth.signin.new_here')
+                  : l.t('auth.signup.agree'),
               style:
                   const TextStyle(color: AppTheme.textMuted, fontSize: 12.5),
             ),
@@ -149,7 +146,9 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
                 child: CircularProgressIndicator(
                     strokeWidth: 2.5, color: Colors.white),
               )
-            : Text(isSignIn ? 'Send OTP' : l.t('common.continue')),
+            : Text(
+                isSignIn ? l.t('auth.signin.send_otp') : l.t('common.continue'),
+              ),
       ),
     );
   }

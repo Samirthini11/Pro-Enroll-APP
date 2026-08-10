@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
 import '../../core/i18n.dart';
-import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
@@ -12,7 +11,6 @@ import '../../state/app_state.dart';
 import '../../state/categories_provider.dart';
 import '../../state/locale_state.dart';
 import '../shared/api_errors.dart';
-import '../shared/category_price_badges.dart';
 import '../shared/widgets.dart';
 
 class VisitFeeScreen extends ConsumerStatefulWidget {
@@ -23,33 +21,36 @@ class VisitFeeScreen extends ConsumerStatefulWidget {
 }
 
 class _VisitFeeScreenState extends ConsumerState<VisitFeeScreen> {
-  int _fee = 150;
-  bool _feeLocked = false;
+  Map<String, int> _fees = {};
+  bool _initialized = false;
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _applyFeeFromCategories(ref.read(categoriesListProvider));
+  void _ensureFees(List<CategoryRef> categories, ProProfile profile) {
+    if (_initialized && _fees.isNotEmpty) return;
+    final next = <String, int>{};
+    for (final s in profile.skills) {
+      final cat = categories.tryByCode(s.categoryCode);
+      final fromSkill = s.visitFeePaise > 0
+          ? (s.visitFeePaise / 100).round()
+          : (profile.visitFeePaise / 100).round();
+      next[s.categoryCode] = clampVisitFeeRupees(
+        fromSkill > 0
+            ? fromSkill
+            : (cat?.defaultVisitFee ?? suggestedVisitFeeRupees(
+                categories,
+                [s.categoryCode],
+              )),
+      );
+    }
+    if (next.isEmpty) return;
+    setState(() {
+      _fees = next;
+      _initialized = true;
     });
-  }
-
-  void _applyFeeFromCategories(List<CategoryRef> categories) {
-    if (_feeLocked) return;
-    final profile = ref.read(profileProvider);
-    final skillCodes = profile.skills.map((s) => s.categoryCode);
-    if (skillCodes.isEmpty) return;
-
-    final suggested = clampVisitFeeRupees(
-      suggestedVisitFeeRupees(categories, skillCodes),
-    );
-    setState(() => _fee = suggested);
   }
 
   Future<void> _continue() async {
     final pn = ref.read(profileProvider.notifier);
-    pn.setVisitFeeRupees(_fee);
+    pn.setSkillVisitFeesRupees(_fees);
     try {
       await pn.persistVisitFee();
     } catch (e) {
@@ -68,32 +69,24 @@ class _VisitFeeScreenState extends ConsumerState<VisitFeeScreen> {
     final lang = ref.watch(localeProvider).languageCode;
     final categoriesAsync = ref.watch(categoriesProvider);
     final profile = ref.watch(profileProvider);
-    final amountSize = context.responsive<double>(xs: 44, sm: 52, md: 60);
-
-    ref.listen<AsyncValue<List<CategoryRef>>>(categoriesProvider, (prev, next) {
-      next.whenData((cats) {
-        if (mounted) _applyFeeFromCategories(cats);
-      });
-    });
 
     Widget body;
     if (categoriesAsync.isLoading) {
       body = const Center(child: CircularProgressIndicator());
     } else {
-      final List<CategoryRef> categories =
-          categoriesAsync.valueOrNull ?? ref.watch(categoriesListProvider);
+      final List<CategoryRef> categories = ref.watch(categoriesListProvider);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _ensureFees(categories, profile);
+      });
       body = VisitFeeEditor(
         lang: lang,
         categories: categories,
         profile: profile,
-        fee: _fee,
-        amountSize: amountSize,
+        feesRupees: _fees,
         helper: l.t('onboarding.fee.helper'),
-        chargeLabel: l.t('onboarding.fee.yourCharge'),
         suggestedHint: l.t('onboarding.fee.suggestedHint'),
-        onFeeChanged: (v) => setState(() {
-          _fee = v;
-          _feeLocked = true;
+        onFeeChanged: (code, rupees) => setState(() {
+          _fees = {..._fees, code: clampVisitFeeRupees(rupees)};
         }),
       );
     }
@@ -102,7 +95,7 @@ class _VisitFeeScreenState extends ConsumerState<VisitFeeScreen> {
       title: l.t('onboarding.fee.title'),
       child: body,
       bottom: FilledButton(
-        onPressed: categoriesAsync.isLoading ? null : _continue,
+        onPressed: categoriesAsync.isLoading || _fees.isEmpty ? null : _continue,
         child: Text(l.t('common.continue')),
       ),
     );
@@ -115,22 +108,18 @@ class VisitFeeEditor extends StatelessWidget {
     required this.lang,
     required this.categories,
     required this.profile,
-    required this.fee,
-    required this.amountSize,
+    required this.feesRupees,
     required this.helper,
     required this.onFeeChanged,
-    this.chargeLabel = 'Your visiting charge',
     this.suggestedHint,
   });
 
   final String lang;
   final List<CategoryRef> categories;
   final ProProfile profile;
-  final int fee;
-  final double amountSize;
+  final Map<String, int> feesRupees;
   final String helper;
-  final ValueChanged<int> onFeeChanged;
-  final String chargeLabel;
+  final void Function(String categoryCode, int rupees) onFeeChanged;
   final String? suggestedHint;
 
   @override
@@ -147,138 +136,143 @@ class VisitFeeEditor extends StatelessWidget {
           helper,
           style: const TextStyle(color: AppTheme.textMuted, height: 1.4),
         ),
-        if (selected.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          ...selected.map(
-            (cat) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppTheme.brandPrimaryLight,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  border: Border.all(
-                    color: AppTheme.brandPrimary.withValues(alpha: 0.15),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(cat.icon, size: 20, color: AppTheme.brandPrimaryDark),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        cat.name(lang),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    CategoryPriceBadges(
-                      category: cat,
-                      lang: lang,
-                      compact: true,
-                      visitOnly: true,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-        const SizedBox(height: 16),
-        Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-              gradient: const LinearGradient(
-                colors: [AppTheme.brandPrimary, AppTheme.brandPrimaryDark],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.brandPrimary.withValues(alpha: 0.22),
-                  blurRadius: 22,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Text(
-                  chargeLabel,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.86),
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '₹$fee',
-                  style: TextStyle(
-                    fontSize: amountSize,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: -1,
-                  ),
-                ),
-              ],
-            ),
+        const SizedBox(height: 8),
+        Text(
+          'Set a visiting charge for each service.',
+          style: const TextStyle(
+            color: AppTheme.textSecondary,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
           ),
         ),
-        const SizedBox(height: 22),
-        Row(
-          children: [
-            IconButton.filledTonal(
-              style: IconButton.styleFrom(
-                minimumSize: const Size.square(44),
-                shape: const CircleBorder(),
-              ),
-              onPressed: fee <= visitFeeMinRupees
-                  ? null
-                  : () => onFeeChanged(fee - visitFeeStepRupees),
-              icon: const Icon(Icons.remove),
-            ),
-            Expanded(
-              child: Slider(
-                value: fee.toDouble().clamp(
-                  visitFeeMinRupees.toDouble(),
-                  visitFeeMaxRupees.toDouble(),
-                ),
-                min: visitFeeMinRupees.toDouble(),
-                max: visitFeeMaxRupees.toDouble(),
-                divisions:
-                    (visitFeeMaxRupees - visitFeeMinRupees) ~/ visitFeeStepRupees,
-                label: '₹$fee',
-                onChanged: (v) => onFeeChanged(clampVisitFeeRupees(v.round())),
-              ),
-            ),
-            IconButton.filledTonal(
-              style: IconButton.styleFrom(
-                minimumSize: const Size.square(44),
-                shape: const CircleBorder(),
-              ),
-              onPressed: fee >= visitFeeMaxRupees
-                  ? null
-                  : () => onFeeChanged(
-                        clampVisitFeeRupees(fee + visitFeeStepRupees),
-                      ),
-              icon: const Icon(Icons.add),
-            ),
-          ],
-        ),
         const SizedBox(height: 16),
+        if (selected.isEmpty)
+          const TrustBanner(
+            icon: Icons.info_outline,
+            text: 'Select at least one service first.',
+          )
+        else
+          ...selected.map((cat) {
+            final fee = feesRupees[cat.code] ??
+                clampVisitFeeRupees(cat.defaultVisitFee);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _ServiceFeeCard(
+                category: cat,
+                lang: lang,
+                fee: fee,
+                onFeeChanged: (v) => onFeeChanged(cat.code, v),
+              ),
+            );
+          }),
+        const SizedBox(height: 8),
         TrustBanner(
           icon: Icons.info_outline,
           text: suggestedHint ??
-              'Suggested from your selected services — adjust if needed.',
+              'Suggested from each service — adjust if needed. Customers see the fee for the service they book.',
         ),
       ],
+    );
+  }
+}
+
+class _ServiceFeeCard extends StatelessWidget {
+  const _ServiceFeeCard({
+    required this.category,
+    required this.lang,
+    required this.fee,
+    required this.onFeeChanged,
+  });
+
+  final CategoryRef category;
+  final String lang;
+  final int fee;
+  final ValueChanged<int> onFeeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(category.icon, size: 22, color: AppTheme.brandPrimary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  category.name(lang),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14.5,
+                  ),
+                ),
+              ),
+              Text(
+                '₹$fee',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                  color: AppTheme.brandPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Suggested ₹${category.defaultVisitFee}',
+            style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+          ),
+          Row(
+            children: [
+              IconButton.filledTonal(
+                style: IconButton.styleFrom(
+                  minimumSize: const Size.square(40),
+                  shape: const CircleBorder(),
+                ),
+                onPressed: fee <= visitFeeMinRupees
+                    ? null
+                    : () => onFeeChanged(fee - visitFeeStepRupees),
+                icon: const Icon(Icons.remove, size: 18),
+              ),
+              Expanded(
+                child: Slider(
+                  value: fee.toDouble().clamp(
+                        visitFeeMinRupees.toDouble(),
+                        visitFeeMaxRupees.toDouble(),
+                      ),
+                  min: visitFeeMinRupees.toDouble(),
+                  max: visitFeeMaxRupees.toDouble(),
+                  divisions:
+                      (visitFeeMaxRupees - visitFeeMinRupees) ~/
+                          visitFeeStepRupees,
+                  label: '₹$fee',
+                  onChanged: (v) =>
+                      onFeeChanged(clampVisitFeeRupees(v.round())),
+                ),
+              ),
+              IconButton.filledTonal(
+                style: IconButton.styleFrom(
+                  minimumSize: const Size.square(40),
+                  shape: const CircleBorder(),
+                ),
+                onPressed: fee >= visitFeeMaxRupees
+                    ? null
+                    : () => onFeeChanged(
+                          clampVisitFeeRupees(fee + visitFeeStepRupees),
+                        ),
+                icon: const Icon(Icons.add, size: 18),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

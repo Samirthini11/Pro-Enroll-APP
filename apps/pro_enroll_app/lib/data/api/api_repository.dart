@@ -106,11 +106,14 @@ class ApiRepository implements ProRepository {
   Future<void> saveCategories(
     List<String> categoryCodes, {
     Map<String, int>? experienceByCategory,
+    Map<String, int>? experienceStartYearByCategory,
   }) async {
     await _client.put(
       '/v1/screens/onboard-category',
       body: {
         'category_codes': categoryCodes,
+        if (experienceStartYearByCategory != null)
+          'experience_start_year_by_category': experienceStartYearByCategory,
         if (experienceByCategory != null)
           'experience_by_category': experienceByCategory,
       },
@@ -120,13 +123,17 @@ class ApiRepository implements ProRepository {
   @override
   Future<void> saveExperience({
     required String fullName,
-    required Map<String, int> experienceByCategory,
+    Map<String, int>? experienceByCategory,
+    Map<String, int>? experienceStartYearByCategory,
   }) async {
     await _client.put(
       '/v1/screens/onboard-experience',
       body: {
         'full_name': fullName,
-        'experience_by_category': experienceByCategory,
+        if (experienceStartYearByCategory != null)
+          'experience_start_year_by_category': experienceStartYearByCategory,
+        if (experienceByCategory != null)
+          'experience_by_category': experienceByCategory,
       },
     );
   }
@@ -150,11 +157,23 @@ class ApiRepository implements ProRepository {
   }
 
   @override
-  Future<void> saveVisitFeePaise(int visitFeePaise) async {
-    await _client.put(
-      '/v1/screens/onboard-fee',
-      body: {'visit_fee_paise': visitFeePaise},
-    );
+  Future<void> saveVisitFeePaise(
+    int visitFeePaise, {
+    Map<String, int>? feesByCategoryPaise,
+  }) async {
+    final body = <String, dynamic>{
+      'visit_fee_paise': visitFeePaise,
+    };
+    if (feesByCategoryPaise != null && feesByCategoryPaise.isNotEmpty) {
+      body['fees'] = [
+        for (final e in feesByCategoryPaise.entries)
+          {
+            'category_code': e.key,
+            'visit_fee_paise': e.value,
+          },
+      ];
+    }
+    await _client.put('/v1/screens/onboard-fee', body: body);
   }
 
   @override
@@ -222,6 +241,45 @@ class ApiRepository implements ProRepository {
   }
 
   @override
+  Future<HomeJobsBundle> fetchHomeJobs(List<String> categoryCodes) async {
+    final data = await _client.get('/v1/screens/home-jobs');
+    final offers = <JobOffer>[];
+    final rawOffers = data['offers'];
+    if (rawOffers is List) {
+      for (final o in rawOffers) {
+        if (o is! Map<String, dynamic>) continue;
+        try {
+          offers.add(jobOfferFromApi(o));
+        } catch (e) {
+          debugPrint('jobOfferFromApi skip: $e');
+        }
+      }
+    }
+    final history = <ProJobHistoryItem>[];
+    final rawHistory = data['job_history'];
+    if (rawHistory is List) {
+      for (final h in rawHistory) {
+        if (h is! Map<String, dynamic>) continue;
+        try {
+          history.add(proJobHistoryFromApi(h));
+        } catch (e) {
+          debugPrint('proJobHistoryFromApi skip: $e');
+        }
+      }
+    }
+    ActiveJob? active;
+    final rawActive = data['active_job'];
+    if (rawActive is Map<String, dynamic>) {
+      try {
+        active = activeJobFromApi(rawActive);
+      } catch (e) {
+        debugPrint('activeJobFromApi skip: $e');
+      }
+    }
+    return HomeJobsBundle(offers: offers, history: history, activeJob: active);
+  }
+
+  @override
   Future<ActiveJob?> fetchActiveJob() async {
     final data = await _client.get('/v1/screens/job-active');
     final job = data['active_job'];
@@ -238,11 +296,15 @@ class ApiRepository implements ProRepository {
   }
 
   @override
-  Future<ActiveJob> acceptOffer(String offerId) async {
+  Future<AcceptOfferResult> acceptOffer(String offerId) async {
     final data = await _client.post('/v1/screens/job-offer/$offerId/accept');
     final job = data['active_job'];
-    if (job is Map<String, dynamic>) return activeJobFromApi(job);
-    throw StateError('acceptOffer: missing active_job');
+    if (job is! Map<String, dynamic>) {
+      throw StateError('acceptOffer: missing active_job');
+    }
+    return AcceptOfferResult(
+      activeJob: activeJobFromApi(job),
+    );
   }
 
   @override
@@ -279,6 +341,32 @@ class ApiRepository implements ProRepository {
   }
 
   @override
+  Future<ActiveJob?> confirmPaymentReceived({String paymentMethod = 'cash'}) async {
+    final data = await _client.post(
+      '/v1/screens/job-active',
+      body: {
+        'action': 'confirm_payment',
+        'payment_method': paymentMethod,
+      },
+    );
+    final job = data['active_job'];
+    if (job is Map<String, dynamic>) return activeJobFromApi(job);
+    return null;
+  }
+
+  @override
+  Future<void> cancelActiveJob({String? reason}) async {
+    final trimmed = reason?.trim();
+    await _client.post(
+      '/v1/screens/job-active',
+      body: {
+        'action': 'cancel',
+        if (trimmed != null && trimmed.isNotEmpty) 'reason': trimmed,
+      },
+    );
+  }
+
+  @override
   Future<EarningsSummary> fetchEarnings() async {
     final data = await _client.get('/v1/screens/home-earnings');
     final summary = data['summary'];
@@ -299,6 +387,10 @@ class ApiRepository implements ProRepository {
   @override
   Future<List<CreditHistoryItem>> fetchCreditHistory() async {
     final data = await _client.get('/v1/screens/home-earnings');
+    final wallet = data['wallet_history'];
+    if (wallet is List && wallet.isNotEmpty) {
+      return creditHistoryFromApi(wallet);
+    }
     return creditHistoryFromApi(data['credit_history']);
   }
 
@@ -323,11 +415,53 @@ class ApiRepository implements ProRepository {
   }
 
   @override
-  Future<void> updateAvailability(bool isAvailable) async {
-    await _client.put(
+  Future<EarningsSummary> rechargeWallet({
+    required int amountPaise,
+    required String utr,
+  }) async {
+    final data = await _client.post(
+      '/v1/screens/home-earnings',
+      body: {
+        'action': 'recharge_wallet',
+        'amount_paise': amountPaise,
+        'utr': utr,
+      },
+    );
+    final summary = data['summary'];
+    if (summary is! Map<String, dynamic>) {
+      throw StateError('rechargeWallet: missing summary');
+    }
+    final merged = Map<String, dynamic>.from(summary);
+    if (data['rating_avg'] != null) merged['rating_avg'] = data['rating_avg'];
+    if (data['rating_count'] != null) merged['rating_count'] = data['rating_count'];
+    if (data['jobs_completed'] != null) merged['jobs_completed'] = data['jobs_completed'];
+    return earningsFromApi(merged);
+  }
+
+  @override
+  Future<List<WalletRechargeRequest>> fetchRechargeRequests() async {
+    final data = await _client.get('/v1/screens/home-earnings');
+    return walletRechargeRequestsFromApi(data['recharge_requests']);
+  }
+
+  @override
+  Future<ProProfile?> requestExperienceEdit({String? reason}) async {
+    final data = await _client.post(
+      '/v1/screens/home-help/experience-edit-request',
+      body: {
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+    return profileFromApiMap(data['profile'] as Map<String, dynamic>?);
+  }
+
+  @override
+  Future<ProProfile?> updateAvailability(bool isAvailable) async {
+    final data = await _client.put(
       '/v1/screens/home-profile',
       body: {'is_available': isAvailable},
     );
+    return profileFromApiMap(data['profile'] as Map<String, dynamic>?);
   }
 
   @override

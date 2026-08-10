@@ -470,8 +470,8 @@ class _CommissionCreditCard extends StatelessWidget {
           Text(
             earnings.commissionNote ??
                 (inFreeWindow
-                    ? 'Free booking window: $freeLeft of ${earnings.freeBookingLimit} left. Full visit fee goes to your wallet.'
-                    : 'Pay ${earnings.visitCommissionPercent}% platform fee to company UPI. Full visit fee is credited to your wallet.'),
+                    ? 'Free booking window: $freeLeft of ${earnings.freeBookingLimit} left. No wallet deduction.'
+                    : 'Keep min ${formatPaise(earnings.walletMinAcceptPaise)} in wallet. Each job deducts ${earnings.visitCommissionPercent}% of visit fee. Recharge via company UPI.'),
             style: const TextStyle(
               color: AppTheme.textMuted,
               fontSize: 13,
@@ -482,7 +482,7 @@ class _CommissionCreditCard extends StatelessWidget {
           if (earnings.listingHeld) ...[
             const SizedBox(height: 10),
             const Text(
-              'Listing on hold after free bookings. Contact support to continue.',
+              'Listing on hold — recharge wallet to min ₹50 to continue accepting jobs.',
               style: TextStyle(
                 color: AppTheme.brandDanger,
                 fontWeight: FontWeight.w700,

@@ -7,6 +7,8 @@ import '../../core/app_config.dart';
 import '../../core/i18n.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
+import '../../data/models.dart';
+import '../../services/kyc_preview_service.dart';
 import '../../services/push_notification_service.dart';
 import '../../state/app_state.dart';
 import 'earnings_tab.dart';
@@ -23,7 +25,6 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
-  int _index = 0;
   Timer? _presenceTimer;
 
   @override
@@ -32,15 +33,22 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     WidgetsBinding.instance.addObserver(this);
     final pendingTab = PushNotificationService.pendingHomeTab;
     if (pendingTab != null && pendingTab >= 0 && pendingTab <= 4) {
-      _index = pendingTab;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(homeShellTabProvider.notifier).state = pendingTab;
+      });
       PushNotificationService.pendingHomeTab = null;
     }
     if (AppConfig.hasApi) {
       Future.microtask(() async {
-        await ref.read(pushNotificationServiceProvider).syncTokenWithServer();
         await ref.read(pushNotificationServiceProvider).markReadyAndFlush(
               authenticated: true,
             );
+        unawaited(
+          ref.read(pushNotificationServiceProvider).finishColdStartAndSyncToken(
+                role: ref.read(roleProvider),
+              ),
+        );
         await ref.read(profileProvider.notifier).loadFromApi();
         final profile = ref.read(profileProvider);
         if (profile.isAvailable) {
@@ -57,7 +65,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         final tab = PushNotificationService.pendingHomeTab;
         if (tab != null && mounted) {
           PushNotificationService.pendingHomeTab = null;
-          setState(() => _index = tab.clamp(0, 4));
+          ref.read(homeShellTabProvider.notifier).state = tab.clamp(0, 4);
           if (tab == 1) {
             ref.invalidate(earningsProvider);
             ref.invalidate(creditHistoryProvider);
@@ -108,6 +116,18 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
     final available = ref.watch(profileProvider.select((p) => p.isAvailable));
+    final kycStatus = ref.watch(profileProvider.select((p) => p.kycStatus));
+    final preview = ref.watch(kycPreviewUnlockedProvider);
+    final showPendingBanner =
+        preview && kycStatus == KycStatus.inReview;
+
+    if (kycStatus.isVerified && preview) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        ref.read(kycPreviewUnlockedProvider.notifier).state = false;
+        await KycPreviewService.clear();
+      });
+    }
 
     ref.listen<bool>(
       profileProvider.select((p) => p.isAvailable),
@@ -134,9 +154,51 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       ProfileTab(),
       HelpTab(),
     ];
+    final index = ref.watch(homeShellTabProvider).clamp(0, pages.length - 1);
     return Scaffold(
       backgroundColor: AppTheme.surface,
-      body: SafeArea(child: ContentMaxWidth(child: IndexedStack(index: _index, children: pages))),
+      body: SafeArea(
+        child: ContentMaxWidth(
+          child: Column(
+            children: [
+              if (showPendingBanner)
+                Material(
+                  color: const Color(0xFFFFF4E5),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.hourglass_top_rounded,
+                          size: 18,
+                          color: Color(0xFFB86E00),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            l.t('kyc.pending.banner'),
+                            style: const TextStyle(
+                              color: Color(0xFF8A5400),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: IndexedStack(index: index, children: pages),
+              ),
+            ],
+          ),
+        ),
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -145,9 +207,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
           ),
         ),
         child: NavigationBar(
-          selectedIndex: _index,
+          selectedIndex: index,
           onDestinationSelected: (i) {
-            setState(() => _index = i);
+            ref.read(homeShellTabProvider.notifier).state = i;
             if (i == 1) {
               ref.invalidate(earningsProvider);
               ref.invalidate(creditHistoryProvider);

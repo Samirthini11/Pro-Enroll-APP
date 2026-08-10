@@ -312,6 +312,220 @@ class _TrackingRow extends StatelessWidget {
   }
 }
 
+/// Compact current-job progress card for the customer home dashboard.
+class ActiveWorkProgressCard extends StatelessWidget {
+  const ActiveWorkProgressCard({
+    super.key,
+    required this.booking,
+    required this.onTap,
+  });
+
+  final CustomerBooking booking;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = booking.trackingSteps;
+    BookingTrackingStep? active;
+    for (final s in steps) {
+      if (s.state == 'active') {
+        active = s;
+        break;
+      }
+    }
+    final doneCount = steps.where((s) => s.state == 'done').length;
+    final total = steps.isEmpty ? 1 : steps.length;
+    final progress = steps.isEmpty
+        ? 0.2
+        : ((doneCount + (active != null ? 0.55 : 0)) / total).clamp(0.08, 1.0);
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.25)),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppTheme.brandPrimary.withValues(alpha: 0.06),
+                Colors.white,
+              ],
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.handyman_outlined, size: 18, color: AppTheme.brandPrimary),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text(
+                      'Current work',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                        color: AppTheme.brandPrimary,
+                      ),
+                    ),
+                  ),
+                  CustomerStatusChip(booking: booking, compact: true),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                booking.professionalName,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                active?.label ?? booking.displayStatusLabel,
+                style: const TextStyle(
+                  color: AppTheme.textMuted,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 7,
+                  backgroundColor: AppTheme.border,
+                  color: customerStatusColor(booking.status),
+                ),
+              ),
+              if (steps.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _CompactStepRow(steps: steps, status: booking.status),
+              ],
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Text(
+                    booking.canPayVisitFee ? 'Confirm & pay visit fee' : 'View progress',
+                    style: TextStyle(
+                      color: booking.canPayVisitFee
+                          ? AppTheme.brandWarning
+                          : AppTheme.brandPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: booking.canPayVisitFee
+                        ? AppTheme.brandWarning
+                        : AppTheme.brandPrimary,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactStepRow extends StatelessWidget {
+  const _CompactStepRow({required this.steps, required this.status});
+  final List<BookingTrackingStep> steps;
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < steps.length; i++) ...[
+            if (i > 0)
+              Container(
+                width: 14,
+                height: 2,
+                margin: const EdgeInsets.only(bottom: 14),
+                color: steps[i - 1].state == 'done'
+                    ? AppTheme.brandSuccess.withValues(alpha: 0.5)
+                    : AppTheme.border,
+              ),
+            _MiniStepDot(step: steps[i], cancelled: status == 'cancelled'),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniStepDot extends StatelessWidget {
+  const _MiniStepDot({required this.step, required this.cancelled});
+  final BookingTrackingStep step;
+  final bool cancelled;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDone = step.state == 'done';
+    final isActive = step.state == 'active';
+    final color = cancelled && isActive
+        ? AppTheme.brandDanger
+        : isDone
+            ? AppTheme.brandSuccess
+            : isActive
+                ? AppTheme.brandPrimary
+                : AppTheme.textFaint;
+
+    return SizedBox(
+      width: 56,
+      child: Column(
+        children: [
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: (isDone || isActive) ? color.withValues(alpha: 0.15) : AppTheme.border.withValues(alpha: 0.4),
+              border: Border.all(color: color, width: isActive ? 2 : 1),
+            ),
+            child: Icon(
+              isDone ? Icons.check : Icons.circle,
+              size: isDone ? 11 : 6,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            step.label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 9.5,
+              height: 1.15,
+              fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
+              color: isActive || isDone ? color : AppTheme.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class CustomerBookingListTile extends StatelessWidget {
   const CustomerBookingListTile({
     super.key,

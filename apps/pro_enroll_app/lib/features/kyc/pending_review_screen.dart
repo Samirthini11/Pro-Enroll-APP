@@ -5,16 +5,53 @@ import 'package:go_router/go_router.dart';
 import '../../core/i18n.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
+import '../../data/api/api_exception.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
+import '../../services/kyc_preview_service.dart';
 import '../../state/app_state.dart';
 import '../shared/widgets.dart';
 
-class PendingReviewScreen extends ConsumerWidget {
+class PendingReviewScreen extends ConsumerStatefulWidget {
   const PendingReviewScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PendingReviewScreen> createState() =>
+      _PendingReviewScreenState();
+}
+
+class _PendingReviewScreenState extends ConsumerState<PendingReviewScreen> {
+  bool _busy = false;
+
+  Future<void> _continueToApp() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      // Dev/live-debug APIs may approve immediately; live usually returns 403.
+      try {
+        await ref.read(repositoryProvider).simulateKycApproval();
+        ref.read(profileProvider.notifier).setKyc(KycStatus.verified);
+        ref.read(profileProvider.notifier).seedDemoStats();
+        await ref.read(profileProvider.notifier).loadFromApi();
+      } on ApiException catch (e) {
+        debugPrint('KYC simulate unavailable (${e.statusCode}): ${e.message}');
+      } catch (e) {
+        debugPrint('KYC simulate failed: $e');
+      }
+
+      // Always unlock preview so the pro can explore the app while waiting.
+      await KycPreviewService.unlock();
+      ref.read(kycPreviewUnlockedProvider.notifier).state = true;
+
+      if (!mounted) return;
+      context.go(Routes.home);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l = ref.watch(lProvider);
     final hero = context.responsive<double>(xs: 96, sm: 108, md: 120);
 
@@ -74,17 +111,30 @@ class PendingReviewScreen extends ConsumerWidget {
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              l.t('kyc.pending.preview_hint'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                height: 1.35,
+                fontSize: 13.5,
+              ),
+            ),
+          ),
         ],
       ),
-      bottom: OutlinedButton(
-        onPressed: () async {
-          await ref.read(repositoryProvider).simulateKycApproval();
-          ref.read(profileProvider.notifier).setKyc(KycStatus.verified);
-          ref.read(profileProvider.notifier).seedDemoStats();
-          await ref.read(profileProvider.notifier).loadFromApi();
-          if (context.mounted) context.go(Routes.home);
-        },
-        child: const Text('Continue (demo: simulate approval)'),
+      bottom: FilledButton(
+        onPressed: _busy ? null : _continueToApp,
+        child: _busy
+            ? const SizedBox(
+                height: 22,
+                width: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              )
+            : Text(l.t('kyc.pending.continue')),
       ),
     );
   }
@@ -124,12 +174,14 @@ class _StepDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 11, top: 4, bottom: 4),
-      child: Container(
-        width: 2,
-        height: 16,
-        color: AppTheme.border,
+    return const Padding(
+      padding: EdgeInsets.only(left: 12),
+      child: SizedBox(
+        height: 12,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: VerticalDivider(width: 2, thickness: 2),
+        ),
       ),
     );
   }

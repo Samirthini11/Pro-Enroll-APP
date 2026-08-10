@@ -20,6 +20,7 @@ import '../data/repository.dart';
 import '../routing/auth_route_resolver.dart';
 import '../routing/customer_route_resolver.dart';
 import '../routing/router.dart';
+import '../services/kyc_preview_service.dart';
 import '../services/push_notification_service.dart';
 
 
@@ -39,6 +40,9 @@ final repositoryProvider = Provider<ProRepository>((ref) {
 });
 
 final roleProvider = StateProvider<AppRole>((ref) => AppRole.professional);
+
+/// Professional home bottom-nav: 0 Jobs · 1 Wallet · 2 Earnings · 3 Profile · 4 Help
+final homeShellTabProvider = StateProvider<int>((ref) => 0);
 
 
 
@@ -326,12 +330,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (sync.role != null) {
         _ref.read(roleProvider.notifier).state = sync.role!;
       }
-      if (sync.profile != null) {
-        _ref.read(profileProvider.notifier).applyFromServer(sync.profile!);
-      }
       final activeRole = sync.role ?? role;
       if (activeRole == AppRole.customer) {
         await _ref.read(customerProvider.notifier).loadProfile();
+        // Prefer profile-based next route so incomplete customers get name+city setup.
+        final customer = _ref.read(customerProvider).profile;
+        if (!(customer?.isProfileComplete ?? false)) {
+          state = state.copyWith(nextRoute: '/customer/profile-setup');
+        }
+      } else if (sync.profile != null) {
+        _ref.read(profileProvider.notifier).applyFromServer(sync.profile!);
       }
       await _syncPushToken();
       return true;
@@ -379,9 +387,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
       try {
         final mode = isSignIn ? 'sign_in' : 'sign_up';
         final sync = await _repo.syncAuthSession(mode: mode);
-        state = state.copyWith(nextRoute: sync.nextRoute);
+        await _ref.read(customerProvider.notifier).loadProfile();
+        final customer = _ref.read(customerProvider).profile;
+        final next = !(customer?.isProfileComplete ?? false)
+            ? '/customer/profile-setup'
+            : sync.nextRoute;
+        state = state.copyWith(nextRoute: next);
       } catch (e) {
         debugPrint('Customer auth sync failed: $e');
+        final customer = _ref.read(customerProvider).profile;
+        if (!(customer?.isProfileComplete ?? false)) {
+          state = state.copyWith(nextRoute: '/customer/profile-setup');
+        }
       }
       return;
     }
@@ -420,6 +437,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       profile: profile,
       serverNextRoute: state.nextRoute,
       isSignIn: isSignIn,
+      allowKycPreview: _ref.read(kycPreviewUnlockedProvider),
     );
 
     if (!AppConfig.hasApi) {
@@ -467,6 +485,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       profile: profile,
       serverNextRoute: state.nextRoute,
       isSignIn: true,
+      allowKycPreview: _ref.read(kycPreviewUnlockedProvider),
     );
   }
 
@@ -481,51 +500,157 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     final push = _ref.read(pushNotificationServiceProvider);
     await push.init();
-    if (PushNotificationService.hasPending) {
+
+    final role = _ref.read(roleProvider);
+    final hadPending = PushNotificationService.hasPending;
+    if (hadPending) {
       final navigated = await push.markReadyAndFlush(authenticated: true);
-      if (navigated) return;
+      // Success, or another flush (auth listener) already consumed the pending.
+      if (navigated || !PushNotificationService.hasPending) {
+        unawaited(push.finishColdStartAndSyncToken(role: role));
+        return;
+      }
+      // Could not open deep link yet — land on shell, then retry once.
+      router.go(defaultRoute);
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      await push.markReadyAndFlush(authenticated: true);
+      unawaited(push.finishColdStartAndSyncToken(role: role));
+      return;
     }
+
     router.go(defaultRoute);
+    unawaited(push.finishColdStartAndSyncToken(role: role));
+  }
+
+  /// Optimistically mark authenticated from a disk JWT before network validate.
+  /// Prevents GoRouter from bouncing a cold-start notification tap to login.
+  Future<bool> bootstrapSessionFromDisk({AppRole? preferredRole}) async {
+    if (!AppConfig.hasApi) return false;
+
+    final preferred = preferredRole ??
+        PushNotificationService.pendingRequiredRole;
+    final active = await _tokens.getActiveRole();
+    final candidates = <AppRole>[
+      if (preferred != null) preferred,
+      active,
+      ...AppRole.values,
+    ];
+
+    for (final role in candidates) {
+      if (!await _tokens.hasTokenForRole(role)) continue;
+      await _tokens.setActiveRole(role);
+      _ref.read(roleProvider.notifier).state = role;
+      state = state.copyWith(
+        isAuthenticated: true,
+        role: role,
+      );
+      return true;
+    }
+    return state.isAuthenticated;
   }
 
 
 
-  Future<bool> tryRestoreSession() async {
-    if (!AppConfig.hasApi || !await _tokens.hasTokenAsync()) {
+  Future<bool> tryRestoreSession({AppRole? preferredRole}) async {
+    if (!AppConfig.hasApi) {
       return false;
     }
 
     final activeRole = await _tokens.getActiveRole();
-    await _tokens.setActiveRole(activeRole);
-    _ref.read(roleProvider.notifier).state = activeRole;
+    final preferred = preferredRole ??
+        PushNotificationService.pendingRequiredRole;
+    final fromNotification = PushNotificationService.hasPending;
 
-    var valid = await _repo.validateSession();
-    if (!valid) {
-      await _tokens.signOut();
-      return false;
+    // Prefer the role needed by a tapped notification, then last-active, then the other.
+    final candidates = <AppRole>[];
+    void add(AppRole role) {
+      if (!candidates.contains(role)) candidates.add(role);
     }
 
-    state = state.copyWith(
-      isAuthenticated: true,
-      role: activeRole,
-      nextRoute: activeRole == AppRole.customer ? '/customer/home' : state.nextRoute,
-    );
+    if (preferred != null) add(preferred);
+    add(activeRole);
+    for (final role in AppRole.values) {
+      add(role);
+    }
 
-    try {
-      if (activeRole == AppRole.customer) {
-        await _ref.read(customerProvider.notifier).loadProfile();
-      } else {
-        final profile = await _repo.fetchProfile();
-        if (profile != null) {
-          _ref.read(profileProvider.notifier).applyFromServer(profile);
+    ApiException? lastAuthFailure;
+
+    Future<bool> adoptRole(AppRole role, {required bool syncPush}) async {
+      await _tokens.setActiveRole(role);
+      _ref.read(roleProvider.notifier).state = role;
+      state = state.copyWith(
+        isAuthenticated: true,
+        role: role,
+      );
+
+      try {
+        if (role == AppRole.customer) {
+          await _ref.read(customerProvider.notifier).loadProfile();
+          final customer = _ref.read(customerProvider).profile;
+          state = state.copyWith(
+            nextRoute: !(customer?.isProfileComplete ?? false)
+                ? '/customer/profile-setup'
+                : '/customer/home',
+          );
+        } else {
+          final profile = await _repo.fetchProfile();
+          if (profile != null) {
+            _ref.read(profileProvider.notifier).applyFromServer(profile);
+          }
         }
+      } catch (e) {
+        debugPrint('Session restore profile sync: $e');
       }
-    } catch (e) {
-      debugPrint('Session restore profile sync: $e');
+
+      if (syncPush) {
+        // Do not block notification deep-link on FCM register.
+        unawaited(_syncPushToken());
+      }
+      return true;
     }
 
-    await _syncPushToken();
-    return true;
+    for (final role in candidates) {
+      if (!await _tokens.hasTokenForRole(role)) continue;
+
+      await _tokens.setActiveRole(role);
+      _ref.read(roleProvider.notifier).state = role;
+
+      try {
+        final valid = await _repo.validateSession();
+        if (!valid) {
+          // Soft fail — fall through to trust on-disk JWT below.
+          continue;
+        }
+      } on ApiException catch (e) {
+        lastAuthFailure = e;
+        if (e.statusCode == 401) {
+          continue;
+        }
+        // Non-auth error: still restore this role (token present).
+      } catch (e) {
+        debugPrint('Session restore network for $role: $e');
+        // Keep going with this role if a token exists.
+      }
+
+      return adoptRole(role, syncPush: !fromNotification);
+    }
+
+    // Cold start / soft failure: JWT still on disk → keep session (open app /
+    // notification) instead of sending the user to login.
+    for (final role in candidates) {
+      if (!await _tokens.hasTokenForRole(role)) continue;
+      debugPrint(
+        'Session restore: trusting local JWT for $role '
+        '(server validate soft-failed; fromNotification=$fromNotification)',
+      );
+      return adoptRole(role, syncPush: !fromNotification);
+    }
+
+    // No usable token — nothing to restore (do not wipe empty storage).
+    if (lastAuthFailure != null) {
+      debugPrint('Session restore failed: $lastAuthFailure');
+    }
+    return false;
   }
 
   Future<void> signOut() async {
@@ -547,18 +672,66 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _repo.logout();
     state = const AuthState();
     _ref.read(profileProvider.notifier).reset();
+    _ref.read(customerProvider.notifier).reset();
+    _ref.read(jobsProvider.notifier).reset();
     _ref.read(roleProvider.notifier).state = AppRole.professional;
+    _ref.read(kycPreviewUnlockedProvider.notifier).state = false;
+    await KycPreviewService.clear();
+    // Drop stale deep-links from this session; a new tap while logged out
+    // will queue a fresh destination for after the next login.
+    await _ref.read(pushNotificationServiceProvider).clearPendingForLogout();
   }
 
   /// Switch between Pro (enrolled) and Customer (book services) without OTP.
   Future<bool> switchRole(AppRole target) async {
-    if (!AppConfig.hasApi || !await _tokens.hasTokenAsync()) {
+    if (!AppConfig.hasApi) {
       _ref.read(roleProvider.notifier).state = target;
       return false;
     }
+
+    Future<bool> adoptLocal() async {
+      await _tokens.setActiveRole(target);
+      _ref.read(roleProvider.notifier).state = target;
+      state = state.copyWith(
+        isAuthenticated: true,
+        role: target,
+        clearError: true,
+      );
+      try {
+        if (target == AppRole.customer) {
+          if (_ref.read(profileProvider).isAvailable) {
+            try {
+              await _ref.read(profileProvider.notifier).setAvailability(false);
+            } catch (_) {}
+          }
+          await _ref.read(customerProvider.notifier).loadProfile();
+        } else {
+          final profile = await _repo.fetchProfile();
+          if (profile != null) {
+            _ref.read(profileProvider.notifier).applyFromServer(profile);
+          }
+        }
+      } catch (e) {
+        debugPrint('switchRole local profile sync: $e');
+      }
+      return true;
+    }
+
+    if (await _tokens.hasTokenForRole(target)) {
+      return adoptLocal();
+    }
+
+    if (!await _tokens.hasTokenAsync()) {
+      _ref.read(roleProvider.notifier).state = target;
+      return false;
+    }
+
     try {
       final sync = await _repo.switchRole(target);
-      if (sync == null) return false;
+      if (sync == null) {
+        if (await _tokens.hasTokenForRole(target)) return adoptLocal();
+        return false;
+      }
       _ref.read(roleProvider.notifier).state = sync.role ?? target;
       state = state.copyWith(
         isAuthenticated: true,
@@ -574,7 +747,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
           _ref.read(profileProvider.notifier).applyFromServer(profile);
         }
       } else if (target == AppRole.customer) {
-        // Switching away from pro mode — hide from customer search.
         if (_ref.read(profileProvider).isAvailable) {
           try {
             await _ref.read(profileProvider.notifier).setAvailability(false);
@@ -585,9 +757,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _syncPushToken();
       return true;
     } on ApiException catch (e) {
-      state = state.copyWith(errorMessage: e.message);
+      debugPrint('switchRole API failed: $e');
+      if (await _tokens.hasTokenForRole(target)) return adoptLocal();
       return false;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('switchRole failed: $e');
+      if (await _tokens.hasTokenForRole(target)) return adoptLocal();
       return false;
     }
   }
@@ -664,19 +839,45 @@ class ProfileNotifier extends StateNotifier<ProProfile> {
 
 
   void setVisitFeeRupees(int rupees) =>
-
       state = state.copyWith(visitFeePaise: rupees * 100);
 
-
+  void setSkillVisitFeesRupees(Map<String, int> feesRupees) {
+    if (feesRupees.isEmpty) return;
+    final skills = [
+      for (final s in state.skills)
+        s.copyWith(
+          visitFeePaise:
+              (feesRupees[s.categoryCode] ?? (s.visitFeePaise / 100).round()) *
+                  100,
+        ),
+    ];
+    ProSkill? primary;
+    for (final s in skills) {
+      if (s.isPrimary) {
+        primary = s;
+        break;
+      }
+    }
+    primary ??= skills.isNotEmpty ? skills.first : null;
+    state = state.copyWith(
+      skills: skills,
+      visitFeePaise: primary?.visitFeePaise ?? state.visitFeePaise,
+    );
+  }
 
   Future<void> setAvailability(bool on) async {
-    final previous = state.isAvailable;
+    if (state.isAvailable == on) return;
+    final previous = state;
+    // Optimistic UI — avoid a second full profile reload that jerks the switch.
     state = state.copyWith(isAvailable: on);
     try {
-      await _repo.updateAvailability(on);
-      await loadFromApi();
+      final updated = await _repo.updateAvailability(on);
+      if (updated != null) {
+        // Keep the toggle value the user just set if the server echoes it.
+        state = updated.copyWith(isAvailable: on);
+      }
     } catch (e) {
-      state = state.copyWith(isAvailable: previous);
+      state = previous;
       rethrow;
     }
   }
@@ -712,31 +913,25 @@ class ProfileNotifier extends StateNotifier<ProProfile> {
   Future<void> persistCategories(
     List<String> codes, {
     Map<String, int>? experienceByCategory,
+    Map<String, int>? experienceStartYearByCategory,
   }) async {
     await _repo.saveCategories(
       codes,
       experienceByCategory: experienceByCategory,
+      experienceStartYearByCategory: experienceStartYearByCategory,
     );
   }
 
-
-
   Future<void> persistExperience({
-
     required String fullName,
-
-    required Map<String, int> yearsByCategory,
-
+    Map<String, int>? yearsByCategory,
+    Map<String, int>? startYearByCategory,
   }) async {
-
     await _repo.saveExperience(
-
       fullName: fullName,
-
       experienceByCategory: yearsByCategory,
-
+      experienceStartYearByCategory: startYearByCategory,
     );
-
   }
 
 
@@ -758,9 +953,13 @@ class ProfileNotifier extends StateNotifier<ProProfile> {
 
 
   Future<void> persistVisitFee() async {
-
-    await _repo.saveVisitFeePaise(state.visitFeePaise);
-
+    final fees = {
+      for (final s in state.skills) s.categoryCode: s.visitFeePaise,
+    };
+    await _repo.saveVisitFeePaise(
+      state.visitFeePaise,
+      feesByCategoryPaise: fees.isEmpty ? null : fees,
+    );
   }
 
 
@@ -798,14 +997,21 @@ final profileProvider =
 /// ─── Jobs ──────────────────────────────────────────────────────────────
 
 class JobsState {
-  const JobsState({this.offers = const [], this.activeJob, this.loading = false});
+  const JobsState({
+    this.offers = const [],
+    this.history = const [],
+    this.activeJob,
+    this.loading = false,
+  });
 
   final List<JobOffer> offers;
+  final List<ProJobHistoryItem> history;
   final ActiveJob? activeJob;
   final bool loading;
 
   JobsState copyWith({
     List<JobOffer>? offers,
+    List<ProJobHistoryItem>? history,
     Object? activeJob = _unset,
     bool? loading,
     bool clearActive = false,
@@ -821,6 +1027,7 @@ class JobsState {
 
     return JobsState(
       offers: offers ?? this.offers,
+      history: history ?? this.history,
       activeJob: nextActive,
       loading: loading ?? this.loading,
     );
@@ -834,31 +1041,59 @@ class JobsNotifier extends StateNotifier<JobsState> {
 
   final ProRepository _repo;
 
-  Future<void> refresh(List<String> categoryCodes) async {
-    state = state.copyWith(loading: true);
+  Future<void> refresh(
+    List<String> categoryCodes, {
+    bool silent = false,
+  }) async {
+    // Silent refresh keeps the current list visible (no spinner swap / layout jump).
+    if (!silent || (state.offers.isEmpty && state.history.isEmpty)) {
+      state = state.copyWith(loading: true);
+    }
     try {
-      final offers = await _repo.fetchOffers(categoryCodes);
-      final active = await _repo.fetchActiveJob();
-      // Always replace activeJob (null means work finished / payment due — clear card).
+      final bundle = await _repo.fetchHomeJobs(categoryCodes);
       state = state.copyWith(
-        offers: offers,
-        activeJob: active,
+        offers: bundle.offers,
+        history: bundle.history,
+        activeJob: bundle.activeJob,
         loading: false,
-        clearActive: active == null,
+        clearActive: bundle.activeJob == null,
       );
     } catch (e) {
-      debugPrint('fetchOffers error: $e');
-      state = state.copyWith(offers: const [], loading: false);
+      debugPrint('fetchHomeJobs error: $e');
+      if (!silent) {
+        state = state.copyWith(
+          offers: const [],
+          history: const [],
+          loading: false,
+        );
+      } else {
+        state = state.copyWith(loading: false);
+      }
     }
   }
 
   Future<void> accept(JobOffer offer) async {
-    final job = await _repo.acceptOffer(offer.id);
+    final existing = state.activeJob;
+    if (existing != null && _isOpenJobStatus(existing.status)) {
+      throw ApiException(
+        'Finish your current job before accepting a new one.',
+        code: 'job_in_progress',
+        statusCode: 409,
+      );
+    }
+    final result = await _repo.acceptOffer(offer.id);
     state = state.copyWith(
       offers: state.offers.where((o) => o.id != offer.id).toList(),
-      activeJob: job,
+      activeJob: result.activeJob,
     );
   }
+
+  static bool _isOpenJobStatus(BookingStatus s) =>
+      s == BookingStatus.accepted ||
+      s == BookingStatus.onTheWay ||
+      s == BookingStatus.arrived ||
+      s == BookingStatus.inProgress ||
+      s == BookingStatus.awaitingPayment;
 
   Future<void> reject(JobOffer offer) async {
     await _repo.rejectOffer(offer.id);
@@ -867,15 +1102,57 @@ class JobsNotifier extends StateNotifier<JobsState> {
     );
   }
 
+  Future<void> cancelActive({String? reason}) async {
+    await _repo.cancelActiveJob(reason: reason);
+    final next = await _repo.fetchActiveJob();
+    state = state.copyWith(
+      activeJob: next,
+      clearActive: next == null,
+    );
+  }
+
   Future<void> updateStatus(BookingStatus s) async {
     final j = state.activeJob;
     if (j == null) return;
+    if (j.status == s) return;
+
+    // Client-side one-step guard (server also enforces this).
+    final allowed = switch (j.status) {
+      BookingStatus.accepted => s == BookingStatus.onTheWay,
+      BookingStatus.onTheWay => s == BookingStatus.arrived,
+      BookingStatus.arrived => s == BookingStatus.inProgress,
+      _ => false,
+    };
+    if (!allowed) {
+      throw ApiException(
+        'Please use the next step button only once.',
+        code: 'invalid_status_transition',
+        statusCode: 400,
+      );
+    }
+
     await _repo.updateActiveJobStatus(s);
-    state = state.copyWith(activeJob: j.copyWith(status: s));
+    // Cancel only before work starts, and under daily limit.
+    final statusAllowsCancel = s == BookingStatus.accepted ||
+        s == BookingStatus.onTheWay ||
+        s == BookingStatus.arrived;
+    final underDailyLimit = (j.cancelsRemainingToday ?? 1) > 0;
+    final canCancel = statusAllowsCancel && underDailyLimit;
+    state = state.copyWith(
+      activeJob: j.copyWith(status: s, canCancel: canCancel),
+    );
   }
 
   Future<void> pingLocation(double lat, double lng) async {
-    if (state.activeJob == null) return;
+    final job = state.activeJob;
+    if (job == null) return;
+    // Stop sharing once work has started (or later).
+    if (job.status == BookingStatus.inProgress ||
+        job.status == BookingStatus.awaitingPayment ||
+        job.status == BookingStatus.completed ||
+        job.status == BookingStatus.cancelled) {
+      return;
+    }
     try {
       await _repo.pingActiveJobLocation(lat: lat, lng: lng);
     } catch (e) {
@@ -886,23 +1163,33 @@ class JobsNotifier extends StateNotifier<JobsState> {
   Future<void> complete() async {
     final j = state.activeJob;
     if (j == null) return;
-    // Temporary: visit fee only — do not collect final amount in app.
     final settled = await _repo.completeActiveJob(0);
     if (settled != null) {
-      state = state.copyWith(
-        activeJob: settled.copyWith(status: BookingStatus.completed),
-      );
+      state = state.copyWith(activeJob: settled);
     } else {
       state = state.copyWith(
-        activeJob: j.copyWith(
-          status: BookingStatus.completed,
-          proCreditPaise: j.commissionPreview?.proCreditPaise,
-        ),
+        activeJob: j.copyWith(status: BookingStatus.awaitingPayment),
       );
     }
   }
 
+  Future<void> confirmPaymentReceived({String paymentMethod = 'cash'}) async {
+    final j = state.activeJob;
+    if (j == null) return;
+    await _repo.confirmPaymentReceived(
+      paymentMethod: paymentMethod,
+    );
+    // Current job closed — clear so a new offer can be accepted.
+    final next = await _repo.fetchActiveJob();
+    state = state.copyWith(
+      activeJob: next,
+      clearActive: next == null,
+    );
+  }
+
   void clearActive() => state = state.copyWith(clearActive: true);
+
+  void reset() => state = const JobsState();
 }
 
 
@@ -927,6 +1214,11 @@ final earningsProvider = FutureProvider<EarningsSummary>((ref) {
 
 final creditHistoryProvider = FutureProvider<List<CreditHistoryItem>>((ref) {
   return ref.read(repositoryProvider).fetchCreditHistory();
+});
+
+final rechargeRequestsProvider =
+    FutureProvider<List<WalletRechargeRequest>>((ref) {
+  return ref.read(repositoryProvider).fetchRechargeRequests();
 });
 
 /// ─── Customer ──────────────────────────────────────────────────────────
@@ -961,7 +1253,7 @@ class CustomerNotifier extends StateNotifier<CustomerState> {
   final ProRepository _repo;
 
   Future<void> searchPros({required int cityId, String? categoryCode, String? query, double? lat, double? lng}) async {
-    state = state.copyWith(loading: true);
+    state = state.copyWith(loading: true, searchResults: const []);
     try {
       // Keep bookings fresh so we can hide busy pros client-side too.
       try {
@@ -978,6 +1270,7 @@ class CustomerNotifier extends StateNotifier<CustomerState> {
       );
 
       // Safety net: hide pros with an in-process booking for this customer.
+      // Own professional profile is excluded by the API (same phone / dual role).
       final busyProIds = {
         for (final b in state.bookings)
           if (b.isInProcess) b.professionalId,

@@ -10,17 +10,24 @@ class AuthRouteResolver {
     required ProProfile profile,
     String? serverNextRoute,
     required bool isSignIn,
+    /// When true, in-review pros may open home to explore the app
+    /// before admin KYC approval.
+    bool allowKycPreview = false,
   }) {
     if (AppConfig.hasApi) {
       if (_onboardingComplete(profile) &&
-          profile.kycStatus == KycStatus.verified) {
+          (profile.kycStatus == KycStatus.verified ||
+              (allowKycPreview && profile.kycStatus == KycStatus.inReview))) {
         return Routes.home;
       }
       if (serverNextRoute != null && serverNextRoute.isNotEmpty) {
-        final mapped = _fromServerRoute(serverNextRoute);
+        final mapped = _fromServerRoute(
+          serverNextRoute,
+          allowKycPreview: allowKycPreview,
+        );
         if (mapped != null) return mapped;
       }
-      return _fromProfile(profile);
+      return _fromProfile(profile, allowKycPreview: allowKycPreview);
     }
 
     if (serverNextRoute == '/home' || (isSignIn && serverNextRoute == null)) {
@@ -32,7 +39,10 @@ class AuthRouteResolver {
     return Routes.home;
   }
 
-  static String? _fromServerRoute(String route) {
+  static String? _fromServerRoute(
+    String route, {
+    bool allowKycPreview = false,
+  }) {
     switch (route) {
       case '/home':
         return Routes.home;
@@ -53,7 +63,7 @@ class AuthRouteResolver {
       case '/kyc/docs':
         return Routes.kycDocs;
       case '/kyc/pending':
-        return Routes.kycPending;
+        return allowKycPreview ? Routes.home : Routes.kycPending;
       case '/job/active':
         return Routes.activeJob;
       case '/customer/home':
@@ -70,7 +80,10 @@ class AuthRouteResolver {
         profile.cityId != null;
   }
 
-  static String _fromProfile(ProProfile profile) {
+  static String _fromProfile(
+    ProProfile profile, {
+    bool allowKycPreview = false,
+  }) {
     if (profile.skills.isEmpty) {
       return Routes.onboardCategory;
     }
@@ -85,7 +98,7 @@ class AuthRouteResolver {
       case KycStatus.verified:
         return Routes.home;
       case KycStatus.inReview:
-        return Routes.kycPending;
+        return allowKycPreview ? Routes.home : Routes.kycPending;
       case KycStatus.aadhaarPending:
         return Routes.kycAadhaar;
       case KycStatus.selfiePending:

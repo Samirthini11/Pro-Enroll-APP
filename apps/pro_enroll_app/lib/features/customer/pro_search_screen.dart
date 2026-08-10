@@ -7,8 +7,11 @@ import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
+import '../../state/categories_provider.dart';
+import '../../state/locale_state.dart';
 import '../shared/widgets.dart';
 import 'customer_booking_ui.dart';
+import 'customer_home_screen.dart';
 import 'customer_route_params.dart';
 
 class ProSearchScreen extends ConsumerStatefulWidget {
@@ -44,6 +47,20 @@ class _ProSearchScreenState extends ConsumerState<ProSearchScreen> {
         );
   }
 
+  Future<void> _selectCity(CityRef city) async {
+    setState(() {
+      _cityId = city.id;
+      // Drop previous GPS so search is city-based (not old Pondicherry coords).
+      _lat = null;
+      _lng = null;
+    });
+    // Keep home tab location in sync when returning from View all.
+    ref.read(customerCityProvider.notifier).state = city.id;
+    ref.read(customerLatProvider.notifier).state = null;
+    ref.read(customerLngProvider.notifier).state = null;
+    await _search();
+  }
+
   void _showCityPicker(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
@@ -60,14 +77,9 @@ class _ProSearchScreenState extends ConsumerState<ProSearchScreen> {
                 const SizedBox(height: 12),
                 for (final c in supportedCities)
                   ListTile(
-                    onTap: () {
-                      setState(() {
-                        _cityId = c.id;
-                        _lat = null;
-                        _lng = null;
-                      });
-                      _search();
+                    onTap: () async {
                       Navigator.pop(ctx);
+                      await _selectCity(c);
                     },
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(
@@ -88,8 +100,13 @@ class _ProSearchScreenState extends ConsumerState<ProSearchScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(customerProvider);
+    final lang = ref.watch(localeProvider).languageCode;
+    final categories = ref.watch(categoriesListProvider);
     final catName = _categoryCode != null
-        ? supportedCategories.where((c) => c.code == _categoryCode).firstOrNull?.nameEn ?? 'Pros'
+        ? (categories.tryByCode(_categoryCode!) ??
+                supportedCategories.tryByCode(_categoryCode!))
+            ?.name(lang) ??
+            'Pros'
         : 'All Pros';
     final isCompact = context.deviceSize == DeviceSize.xs;
     final city = cityById(_cityId);
@@ -180,7 +197,8 @@ class _ProSearchScreenState extends ConsumerState<ProSearchScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (ctx, i) {
                   final pro = state.searchResults[i];
-                  final cat = supportedCategories.where((c) => c.code == pro.categoryCode).firstOrNull;
+                  final cat = categories.tryByCode(pro.categoryCode) ??
+                      supportedCategories.tryByCode(pro.categoryCode);
                   return Card(
                     child: InkWell(
                       onTap: () => context.push(
@@ -295,7 +313,7 @@ class _ProSearchScreenState extends ConsumerState<ProSearchScreen> {
                                 if (cat != null)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 2),
-                                    child: Text(cat.nameEn,
+                                    child: Text(cat.name(lang),
                                         style: const TextStyle(fontSize: 10, color: AppTheme.textFaint)),
                                   ),
                               ],

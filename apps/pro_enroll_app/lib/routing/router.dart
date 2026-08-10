@@ -21,6 +21,7 @@ import '../features/home/edit_work_area_screen.dart';
 import '../features/home/edit_visit_fee_screen.dart';
 import '../features/home/home_shell.dart';
 import '../features/job/active_job_screen.dart';
+import '../features/job/job_history_detail_screen.dart';
 import '../features/job/offer_detail_screen.dart';
 import '../features/kyc/aadhaar_screen.dart';
 import '../features/kyc/documents_screen.dart';
@@ -33,7 +34,10 @@ import '../features/onboarding/home_location_screen.dart';
 import '../features/onboarding/visit_fee_screen.dart';
 import '../features/legal/terms_acceptance_screen.dart';
 import '../features/splash/splash_screen.dart';
+import '../services/kyc_preview_service.dart';
 import '../state/app_state.dart';
+import 'auth_route_resolver.dart';
+import 'customer_route_resolver.dart';
 
 /// Centralised list of route paths so screens never hard-code strings.
 class Routes {
@@ -60,6 +64,7 @@ class Routes {
   static const editVisitFee = '/home/edit-visit-fee';
   static const offer = '/job/offer';
   static const activeJob = '/job/active';
+  static const jobHistoryDetail = '/job/history';
 
   // Customer routes
   static const customerHome = '/customer/home';
@@ -97,6 +102,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       refresh.value++;
     }
   });
+  ref.listen<CustomerState>(customerProvider, (prev, next) {
+    final wasComplete = prev?.profile?.isProfileComplete ?? false;
+    final isComplete = next.profile?.isProfileComplete ?? false;
+    if (wasComplete != isComplete ||
+        prev?.profile?.fullName != next.profile?.fullName ||
+        prev?.profile?.cityId != next.profile?.cityId) {
+      refresh.value++;
+    }
+  });
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -106,19 +120,42 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!AppConfig.hasApi) return null;
 
       final path = state.matchedLocation;
+      final authed = ref.read(authProvider).isAuthenticated;
+      final role = ref.read(roleProvider);
+
+      // Signed-in users should never sit on auth landing / phone / OTP.
+      if (authed &&
+          (path == Routes.authLanding ||
+              path == Routes.phone ||
+              path == Routes.otp)) {
+        if (role == AppRole.customer) {
+          return CustomerRouteResolver.resolve(
+            profile: ref.read(customerProvider).profile,
+            serverNextRoute: ref.read(authProvider).nextRoute,
+          );
+        }
+        return AuthRouteResolver.resolve(
+          profile: ref.read(profileProvider),
+          serverNextRoute: ref.read(authProvider).nextRoute,
+          isSignIn: true,
+          allowKycPreview: ref.read(kycPreviewUnlockedProvider),
+        );
+      }
+
       if (Routes.isPublic(path)) return null;
 
-      final authed = ref.read(authProvider).isAuthenticated;
       if (!authed) {
+        // Stay on splash while JWT bootstrap may still be running.
+        if (path == Routes.splash) return null;
         return Routes.authLanding;
       }
 
-      final role = ref.read(roleProvider);
       if (role == AppRole.customer) {
         final profile = ref.read(customerProvider).profile;
-        if (profile != null &&
-            !profile.isProfileComplete &&
-            path != Routes.customerProfileSetup) {
+        final needsSetup = !(profile?.isProfileComplete ?? false);
+        if (needsSetup &&
+            path != Routes.customerProfileSetup &&
+            path.startsWith('/customer')) {
           return Routes.customerProfileSetup;
         }
       }
@@ -214,6 +251,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.activeJob,
         builder: (_, __) => const ActiveJobScreen(),
+      ),
+      GoRoute(
+        path: Routes.jobHistoryDetail,
+        builder: (ctx, st) =>
+            JobHistoryDetailScreen(jobId: st.extra as String?),
       ),
       // ─── Customer routes ──────────────────────────────────────────
       GoRoute(

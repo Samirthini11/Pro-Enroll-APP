@@ -85,6 +85,7 @@ class AuthApi {
       ),
       invalidCodes: const {},
       role: role,
+      clearTokensOnAuthFailure: false,
     );
   }
 
@@ -92,12 +93,14 @@ class AuthApi {
     Future<Map<String, dynamic>> Function() request, {
     required Set<String> invalidCodes,
     AppRole role = AppRole.professional,
+    bool clearTokensOnAuthFailure = true,
   }) async {
     Map<String, dynamic> data;
     try {
       data = await request();
     } on ApiException catch (e) {
-      if (invalidCodes.contains(e.code) || e.statusCode == 401) {
+      if (clearTokensOnAuthFailure &&
+          (invalidCodes.contains(e.code) || e.statusCode == 401)) {
         await _tokens.signOut();
       }
       rethrow;
@@ -160,21 +163,27 @@ class AuthApi {
       final data = await _client.get('/v1/auth/validate');
       return data['valid'] == true;
     } on ApiException catch (e) {
-      if (e.statusCode == 401 &&
-          (e.code == 'invalid_token' || e.code == 'session_revoked')) {
+      if (e.statusCode == 401) {
         final refreshed = await refreshAccessToken();
         if (refreshed) {
           try {
             final data = await _client.get('/v1/auth/validate');
             return data['valid'] == true;
+          } on ApiException catch (e2) {
+            if (e2.statusCode == 401) return false;
+            // Server/network flake after refresh — keep session.
+            return true;
           } catch (_) {
-            return false;
+            return true;
           }
         }
+        return false;
       }
-      return false;
+      // Non-auth API errors (5xx / timeout wrappers) — keep local session.
+      return true;
     } catch (_) {
-      return false;
+      // Network unreachable during cold start — keep local session.
+      return true;
     }
   }
 

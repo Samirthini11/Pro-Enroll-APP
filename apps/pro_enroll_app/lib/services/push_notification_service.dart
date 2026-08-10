@@ -29,12 +29,107 @@ class PushNotificationService {
 
   static PushNavigateCallback? onNavigate;
   static bool Function()? isAuthenticated;
+  static AppRole Function()? currentRole;
 
   static Map<String, dynamic>? _pending;
   static int? pendingHomeTab;
 
   /// True when a notification tap is waiting to be routed.
   static bool get hasPending => _pending != null && _pending!.isNotEmpty;
+
+  /// Role required by the queued notification (if any). Used on cold start so
+  /// session restore picks the correct JWT (customer vs professional).
+  static AppRole? get pendingRequiredRole {
+    final data = _pending;
+    if (data == null || data.isEmpty) return null;
+    return _roleFromPayload(data);
+  }
+
+  /// Call from [main] before [runApp] so cold-start taps are not lost.
+  static Future<void> captureColdStartMessage() async {
+    if (kIsWeb || !AppConfig.usesFirebase) return;
+    try {
+      final initial = await FirebaseMessaging.instance.getInitialMessage();
+      if (initial == null) return;
+      await seedPendingFromRemoteMessage(initial);
+      if (kDebugMode) {
+        debugPrint('[FCM] main() cold-start pending: $_pending');
+      }
+    } catch (e) {
+      debugPrint('[FCM] early getInitialMessage failed: $e');
+    }
+  }
+
+  static Future<void> seedPendingFromRemoteMessage(RemoteMessage message) async {
+    final data = <String, dynamic>{};
+    message.data.forEach((key, value) {
+      data[key.toString()] = value?.toString() ?? '';
+    });
+    if (!data.containsKey('title') && message.notification?.title != null) {
+      data['title'] = message.notification!.title;
+    }
+    if (!data.containsKey('body') && message.notification?.body != null) {
+      data['body'] = message.notification!.body;
+    }
+    await seedPending(data);
+  }
+
+  static Future<void> seedPending(Map<String, dynamic> data) async {
+    if (data.isEmpty) return;
+    _pending = data;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pendingPrefsKey, _encodePayloadStatic(data));
+    } catch (e) {
+      debugPrint('[FCM] persist pending failed: $e');
+    }
+  }
+
+  static String _encodePayloadStatic(Map<String, dynamic> data) {
+    return data.entries
+        .map(
+          (e) =>
+              '${Uri.encodeComponent(e.key.toString())}=${Uri.encodeComponent(e.value.toString())}',
+        )
+        .join('&');
+  }
+
+  static AppRole? _roleFromPayload(Map<String, dynamic> data) {
+    final audience = (data['audience'] ?? '').toString().trim().toLowerCase();
+    if (audience == 'customer') return AppRole.customer;
+    if (audience == 'professional') return AppRole.professional;
+
+    final type = (data['type'] ?? '').toString().trim();
+    switch (type) {
+      case 'job_offer':
+      case 'booking_cancelled':
+      case 'visit_fee_paid':
+      case 'kyc_approved':
+      case 'kyc_rejected':
+      case 'kyc_pending':
+        return AppRole.professional;
+      case 'booking_confirmed':
+      case 'booking_accepted':
+      case 'booking_completed':
+      case 'booking_rejected':
+      case 'booking_status':
+        return AppRole.customer;
+    }
+
+    final route = (data['route'] ?? '').toString().trim();
+    // Prefer explicit job/kyc paths before the generic "booking" heuristic
+    // (pro payloads also carry booking_id / may mention booking in text).
+    if (route.contains('job') ||
+        route.contains('offer') ||
+        route.contains('kyc') ||
+        route.contains('/home')) {
+      return AppRole.professional;
+    }
+    if (route.contains('customer')) {
+      return AppRole.customer;
+    }
+    return null;
+  }
 
   final ProRepository _repo;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -45,10 +140,35 @@ class PushNotificationService {
   Future<void>? _initFuture;
   bool _readyToNavigate = false;
   bool _flushing = false;
+  /// When true, skip notification-permission prompts during init (cold start
+  /// from a tap already has permission; prompting can disrupt routing).
+  bool _deferPermissionPrompt = false;
+  bool _permissionEnsured = false;
 
-  Future<void> init() {
+  Future<void> init({bool deferPermissionPrompt = false}) {
+    if (deferPermissionPrompt) {
+      _deferPermissionPrompt = true;
+    }
     _initFuture ??= _initOnce();
     return _initFuture!;
+  }
+
+  /// After splash/session restore: allow permission prompts again and register
+  /// the FCM token. Cold-start deferral must not stick forever or pushes die.
+  Future<void> finishColdStartAndSyncToken({AppRole? role}) async {
+    _deferPermissionPrompt = false;
+    _readyToNavigate = true;
+    await syncTokenWithServer(role: role);
+  }
+
+  /// Clear queued deep-link after logout so the next session starts clean.
+  /// Notification taps while logged out will set a new pending destination.
+  Future<void> clearPendingForLogout() async {
+    pendingHomeTab = null;
+    _readyToNavigate = false;
+    _flushing = false;
+    _deferPermissionPrompt = false;
+    await _clearPending();
   }
 
   /// Mark splash finished. Only navigates if [authenticated] is true.
@@ -99,6 +219,12 @@ class PushNotificationService {
           return true;
         }
       }
+      // Don't leave an unroutable payload forever — it blocked older builds from
+      // requesting notification permission / registering FCM tokens.
+      if (kDebugMode) {
+        debugPrint('[FCM] flush failed after retries — clearing stale pending');
+      }
+      await _clearPending();
       return false;
     } finally {
       _flushing = false;
@@ -162,14 +288,18 @@ class PushNotificationService {
         importance: Importance.high,
       );
       await androidPlugin?.createNotificationChannel(channel);
-      await androidPlugin?.requestNotificationsPermission();
+      if (!_deferPermissionPrompt) {
+        await androidPlugin?.requestNotificationsPermission();
+      }
     }
 
-    await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    if (!_deferPermissionPrompt) {
+      await _messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    }
 
     FirebaseMessaging.onMessage.listen(_showForegroundNotification);
     FirebaseMessaging.onMessageOpenedApp.listen((msg) {
@@ -196,8 +326,43 @@ class PushNotificationService {
 
   Future<void> syncTokenWithServer({AppRole? role}) async {
     if (kIsWeb || !AppConfig.hasApi) return;
+    if (isAuthenticated?.call() != true) return;
+    // Keep init listeners registered, but never re-enter permanent defer here.
     await init();
     try {
+      await _ensureNotificationPermission();
+      if (!_permissionEnsured) return;
+
+      var token = await _messaging.getToken();
+      if (token == null || token.isEmpty) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        token = await _messaging.getToken();
+      }
+      if (token != null && token.isNotEmpty) {
+        await _registerToken(token, role: role);
+        if (kDebugMode) {
+          debugPrint(
+            '[FCM] token registered role=${role ?? currentRole?.call()} '
+            'len=${token.length}',
+          );
+        }
+      } else {
+        debugPrint('[FCM] getToken returned empty — notifications may not work');
+      }
+    } catch (e) {
+      debugPrint('FCM token sync failed: $e');
+    }
+  }
+
+  Future<void> _ensureNotificationPermission() async {
+    if (_permissionEnsured) return;
+    try {
+      if (Platform.isAndroid) {
+        final androidPlugin = _local
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>();
+        await androidPlugin?.requestNotificationsPermission();
+      }
       final settings = await _messaging.requestPermission(
         alert: true,
         badge: true,
@@ -207,17 +372,10 @@ class PushNotificationService {
         debugPrint('[FCM] notification permission denied');
         return;
       }
-
-      var token = await _messaging.getToken();
-      if (token == null || token.isEmpty) {
-        await Future<void>.delayed(const Duration(seconds: 2));
-        token = await _messaging.getToken();
-      }
-      if (token != null && token.isNotEmpty) {
-        await _registerToken(token, role: role);
-      }
+      _permissionEnsured = true;
+      _deferPermissionPrompt = false;
     } catch (e) {
-      debugPrint('FCM token sync failed: $e');
+      debugPrint('[FCM] permission request failed: $e');
     }
   }
 
@@ -235,6 +393,12 @@ class PushNotificationService {
 
   Future<void> _showForegroundNotification(RemoteMessage message) async {
     final data = _messageData(message);
+    if (!_isForCurrentRole(data)) {
+      if (kDebugMode) {
+        debugPrint('[FCM] skip foreground (wrong role): ${data['type']} audience=${data['audience']}');
+      }
+      return;
+    }
     final title = data['title'] ?? message.notification?.title;
     final body = data['body'] ?? message.notification?.body;
     if (title == null && body == null) return;
@@ -259,6 +423,20 @@ class PushNotificationService {
     );
   }
 
+  /// Push is for the other party only — ignore alerts meant for the other role.
+  bool _isForCurrentRole(Map<String, dynamic> data) {
+    final role = currentRole?.call();
+    if (role == null) return true;
+
+    final audience = (data['audience'] ?? '').toString().trim().toLowerCase();
+    if (audience == 'customer') return role == AppRole.customer;
+    if (audience == 'professional') return role == AppRole.professional;
+
+    final dest = _resolveDestination(data);
+    if (dest?.requiredRole == null) return true;
+    return dest!.requiredRole == role;
+  }
+
   void _onNotificationTap(NotificationResponse response) {
     final payload = response.payload;
     if (payload == null || payload.isEmpty) return;
@@ -270,9 +448,11 @@ class PushNotificationService {
     await _setPending(data);
     final authed = isAuthenticated?.call() ?? false;
     if (!_readyToNavigate || onNavigate == null || !authed) {
+      // Keep pending for after login. Mark ready so post-login flush can run.
+      _readyToNavigate = true;
       if (kDebugMode) {
         debugPrint(
-          '[FCM] queued (authed=$authed ready=$_readyToNavigate): $data',
+          '[FCM] queued for after login (authed=$authed): $data',
         );
       }
       return;
@@ -316,13 +496,7 @@ class PushNotificationService {
   }
 
   Future<void> _setPending(Map<String, dynamic> data) async {
-    _pending = data;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_pendingPrefsKey, _encodePayload(data));
-    } catch (e) {
-      debugPrint('[FCM] persist pending failed: $e');
-    }
+    await seedPending(data);
   }
 
   Future<void> _clearPending() async {
@@ -531,14 +705,8 @@ class PushNotificationService {
     }
   }
 
-  String _encodePayload(Map<String, dynamic> data) {
-    return data.entries
-        .map(
-          (e) =>
-              '${Uri.encodeComponent(e.key.toString())}=${Uri.encodeComponent(e.value.toString())}',
-        )
-        .join('&');
-  }
+  String _encodePayload(Map<String, dynamic> data) =>
+      _encodePayloadStatic(data);
 
   Map<String, dynamic> _decodePayload(String payload) {
     final out = <String, dynamic>{};

@@ -12,6 +12,7 @@ import '../../state/app_state.dart';
 import '../../state/locale_state.dart';
 import '../shared/api_errors.dart';
 import '../shared/book_service_action.dart';
+import '../shared/language_picker.dart';
 import '../shared/widgets.dart';
 
 class ProfileTab extends ConsumerWidget {
@@ -157,8 +158,10 @@ class ProfileTab extends ConsumerWidget {
             const SizedBox(height: 10),
             InfoCard(
               icon: Icons.currency_rupee,
-              title: 'Visiting charge',
-              subtitle: '${formatPaise(profile.visitFeePaise)} per visit',
+              title: 'Visiting charges',
+              subtitle: profile.hasVaryingVisitFees
+                  ? 'From ${formatPaise(profile.minVisitFeePaise)} · by service'
+                  : '${formatPaise(profile.visitFeePaise)} per visit',
               onTap: () => context.push(Routes.editVisitFee),
             ),
             const SizedBox(height: 14),
@@ -174,12 +177,8 @@ class ProfileTab extends ConsumerWidget {
             InfoCard(
               icon: Icons.translate,
               title: l.t('profile.language'),
-              subtitle: lang == 'ta' ? 'தமிழ்' : 'English',
-              onTap: () {
-                ref
-                    .read(localeProvider.notifier)
-                    .setLanguage(lang == 'ta' ? 'en' : 'ta');
-              },
+              subtitle: languageNativeLabel(lang),
+              onTap: () => showLanguagePicker(context, ref),
             ),
             const SizedBox(height: 10),
             InfoCard(
@@ -308,42 +307,55 @@ class _MyServicesCard extends ConsumerStatefulWidget {
 }
 
 class _MyServicesCardState extends ConsumerState<_MyServicesCard> {
-  Map<String, int> _years = {};
+  Map<String, int> _startYears = {};
   bool _busy = false;
   bool _initialized = false;
+  final int _currentYear = DateTime.now().year;
 
   void _ensureInitialized(List<ProSkill> skills) {
     if (_initialized || skills.isEmpty) return;
-    _years = {for (final s in skills) s.categoryCode: s.experienceYears};
+    _startYears = {
+      for (final s in skills)
+        s.categoryCode:
+            s.effectiveStartYear.clamp(_currentYear - 50, _currentYear),
+    };
     _initialized = true;
   }
 
   bool get _dirty {
     final skills = ref.read(profileProvider).skills;
-    if (skills.length != _years.length) return true;
+    if (skills.length != _startYears.length) return true;
     for (final s in skills) {
-      if (_years[s.categoryCode] != s.experienceYears) return true;
+      if (_startYears[s.categoryCode] != s.effectiveStartYear) return true;
     }
     return false;
   }
 
+  int _yearsFor(String code) =>
+      (_currentYear - (_startYears[code] ?? _currentYear)).clamp(0, 50);
+
   Future<void> _save() async {
-    if (_years.isEmpty || _busy) return;
+    if (_startYears.isEmpty || _busy) return;
     setState(() => _busy = true);
-    final codes = _years.keys.toList();
+    final codes = _startYears.keys.toList();
+    final existing = {
+      for (final s in ref.read(profileProvider).skills) s.categoryCode: s,
+    };
     final skills = codes
         .map(
           (code) => ProSkill(
             categoryCode: code,
-            experienceYears: _years[code] ?? 1,
+            experienceStartYear: _startYears[code] ?? _currentYear,
+            experienceYears: _yearsFor(code),
             isPrimary: codes.first == code,
+            visitFeePaise: existing[code]?.visitFeePaise ?? 15000,
           ),
         )
         .toList();
     try {
       await ref.read(profileProvider.notifier).persistCategories(
             codes,
-            experienceByCategory: _years,
+            experienceStartYearByCategory: Map<String, int>.from(_startYears),
           );
       ref.read(profileProvider.notifier).setSkills(skills);
       await ref.read(profileProvider.notifier).loadFromApi();
@@ -368,7 +380,9 @@ class _MyServicesCardState extends ConsumerState<_MyServicesCard> {
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(localeProvider).languageCode;
-    final skills = ref.watch(profileProvider).skills;
+    final profile = ref.watch(profileProvider);
+    final skills = profile.skills;
+    final canEdit = profile.canEditExperience;
     _ensureInitialized(skills);
 
     return Card(
@@ -392,10 +406,24 @@ class _MyServicesCardState extends ConsumerState<_MyServicesCard> {
               ],
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Tap +/− to change years of experience, then save.',
-              style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+            Text(
+              canEdit
+                  ? 'Set the year you started each service. Experience updates automatically.'
+                  : 'Experience year is locked after enrollment. Raise a request from Help for admin approval.',
+              style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
             ),
+            if (canEdit &&
+                profile.experienceEditRequestStatus == 'approved') ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Admin unlocked editing — update the year and save.',
+                style: TextStyle(
+                  color: AppTheme.brandSuccess,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             if (skills.isEmpty)
               const Text('No services yet. Tap Edit services to add.',
@@ -405,10 +433,15 @@ class _MyServicesCardState extends ConsumerState<_MyServicesCard> {
                 _ServiceExperienceRow(
                   categoryCode: s.categoryCode,
                   lang: lang,
-                  years: _years[s.categoryCode] ?? s.experienceYears,
-                  onChanged: (y) => setState(() => _years[s.categoryCode] = y),
+                  startYear: _startYears[s.categoryCode] ?? s.effectiveStartYear,
+                  years: _yearsFor(s.categoryCode),
+                  minYear: _currentYear - 50,
+                  maxYear: _currentYear,
+                  enabled: canEdit,
+                  onChanged: (y) =>
+                      setState(() => _startYears[s.categoryCode] = y),
                 ),
-            if (_dirty) ...[
+            if (_dirty && canEdit) ...[
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -438,14 +471,22 @@ class _ServiceExperienceRow extends StatelessWidget {
   const _ServiceExperienceRow({
     required this.categoryCode,
     required this.lang,
+    required this.startYear,
     required this.years,
+    required this.minYear,
+    required this.maxYear,
     required this.onChanged,
+    this.enabled = true,
   });
 
   final String categoryCode;
   final String lang;
+  final int startYear;
   final int years;
+  final int minYear;
+  final int maxYear;
   final ValueChanged<int> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -460,17 +501,32 @@ class _ServiceExperienceRow extends StatelessWidget {
           Icon(cat.icon, color: AppTheme.brandPrimary, size: 22),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(cat.name(lang),
-                style: const TextStyle(fontWeight: FontWeight.w600)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(cat.name(lang),
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  'Since $startYear · $years yr${years == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
           IconButton(
-            onPressed: years <= 0 ? null : () => onChanged(years - 1),
+            onPressed: !enabled || startYear <= minYear
+                ? null
+                : () => onChanged(startYear - 1),
             icon: const Icon(Icons.remove_circle_outline),
           ),
-          Text('$years yr${years == 1 ? '' : 's'}',
-              style: const TextStyle(fontWeight: FontWeight.w800)),
+          Text('$startYear', style: const TextStyle(fontWeight: FontWeight.w800)),
           IconButton(
-            onPressed: years >= 50 ? null : () => onChanged(years + 1),
+            onPressed: !enabled || startYear >= maxYear
+                ? null
+                : () => onChanged(startYear + 1),
             icon: const Icon(Icons.add_circle_outline),
           ),
         ],

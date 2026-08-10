@@ -27,6 +27,10 @@ class _ProEnrollAppState extends ConsumerState<ProEnrollApp> {
       return ref.read(authProvider).isAuthenticated;
     };
 
+    PushNotificationService.currentRole = () {
+      return ref.read(roleProvider);
+    };
+
     PushNotificationService.onNavigate = (route, {extra, requiredRole}) async {
       if (!mounted) return false;
       if (!ref.read(authProvider).isAuthenticated) return false;
@@ -39,8 +43,18 @@ class _ProEnrollAppState extends ConsumerState<ProEnrollApp> {
             debugPrint('[FCM] role switch to $requiredRole failed');
             return false;
           }
-          await Future<void>.delayed(const Duration(milliseconds: 350));
+          // Re-register FCM under the role that should receive / open this alert.
+          unawaited(
+            ref.read(pushNotificationServiceProvider).syncTokenWithServer(
+                  role: requiredRole,
+                ),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 450));
           if (!mounted) return false;
+          if (ref.read(roleProvider) != requiredRole) {
+            debugPrint('[FCM] role still mismatched after switch');
+            return false;
+          }
         }
 
         final router = ref.read(routerProvider);
@@ -50,7 +64,6 @@ class _ProEnrollAppState extends ConsumerState<ProEnrollApp> {
           _ => null,
         };
 
-        // Leave splash/auth onto the correct shell, then open the deep link.
         String current = '';
         try {
           current = router.routerDelegate.currentConfiguration.uri.path;
@@ -63,24 +76,33 @@ class _ProEnrollAppState extends ConsumerState<ProEnrollApp> {
             current == Routes.termsAcceptance ||
             current.isEmpty;
 
-        if (shell != null && (onAuthish || current != route)) {
-          if (onAuthish || (shell != route && current != shell)) {
-            router.go(shell);
-            await Future<void>.delayed(const Duration(milliseconds: 350));
-            if (!mounted) return false;
-          }
+        // Always land on the correct shell first (fixes logout → login → deep link).
+        if (shell != null && (onAuthish || current != shell && current != route)) {
+          router.go(shell);
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+          if (!mounted || !ref.read(authProvider).isAuthenticated) return false;
         }
 
-        // Always go to destination (extra rebuilds booking/offer screens).
-        router.go(route, extra: extra);
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        // Second go covers cases where first go was ignored while shell mounted.
-        router.go(route, extra: extra);
-        debugPrint('[FCM] routed to $route extra=$extra');
+        // Detail screens: push on top of shell so Back returns home (not logout/exit).
+        const pushRoutes = {
+          Routes.customerBookingDetail,
+          Routes.offer,
+          Routes.activeJob,
+          Routes.customerBookings,
+        };
+
+        if (pushRoutes.contains(route)) {
+          router.push(route, extra: extra);
+        } else if (route != shell) {
+          router.go(route, extra: extra);
+        }
+
+        debugPrint('[FCM] routed to $route extra=$extra role=$requiredRole');
         return true;
       } catch (e, st) {
         debugPrint('[FCM] onNavigate error: $e\n$st');
         try {
+          if (!ref.read(authProvider).isAuthenticated) return false;
           ref.read(routerProvider).go(route, extra: extra);
           return true;
         } catch (_) {
@@ -90,11 +112,23 @@ class _ProEnrollAppState extends ConsumerState<ProEnrollApp> {
     };
 
     Future.microtask(() async {
-      // Capture cold-start notification ASAP.
-      await ref.read(pushNotificationServiceProvider).init();
-      if (await ref.read(jwtTokenServiceProvider).hasTokenAsync()) {
-        await ref.read(pushNotificationServiceProvider).syncTokenWithServer();
+      // Capture cold-start notification ASAP. Defer permission only when a
+      // notification tap launched the app — otherwise request permission early
+      // so FCM token registration is not blocked for the whole session.
+      final hasColdStartTap = PushNotificationService.hasPending;
+      await ref.read(pushNotificationServiceProvider).init(
+            deferPermissionPrompt: hasColdStartTap,
+          );
+      final preferred = PushNotificationService.pendingRequiredRole;
+      if (preferred != null) {
+        final tokens = ref.read(jwtTokenServiceProvider);
+        if (await tokens.hasTokenForRole(preferred)) {
+          await tokens.setActiveRole(preferred);
+        }
       }
+      await ref.read(authProvider.notifier).bootstrapSessionFromDisk(
+            preferredRole: preferred,
+          );
     });
   }
 
@@ -102,6 +136,7 @@ class _ProEnrollAppState extends ConsumerState<ProEnrollApp> {
   void dispose() {
     PushNotificationService.onNavigate = null;
     PushNotificationService.isAuthenticated = null;
+    PushNotificationService.currentRole = null;
     super.dispose();
   }
 
@@ -111,11 +146,21 @@ class _ProEnrollAppState extends ConsumerState<ProEnrollApp> {
     final locale = ref.watch(localeProvider);
 
     ref.listen<AuthState>(authProvider, (prev, next) {
-      if (next.isAuthenticated &&
-          !(prev?.isAuthenticated ?? false) &&
-          PushNotificationService.hasPending) {
+      final wasAuthed = prev?.isAuthenticated ?? false;
+      final isAuthed = next.isAuthenticated;
+
+      // Only flush after login/OTP — splash owns cold-start notification routing
+      // via navigateRespectingPush (avoids go(default) clobbering the deep link).
+      if (isAuthed && !wasAuthed && PushNotificationService.hasPending) {
+        final path = ref.read(routerProvider).routerDelegate.currentConfiguration
+            .uri.path;
+        // Splash owns cold-start flush via navigateRespectingPush.
+        if (path == Routes.splash || path.isEmpty) return;
+
         Future.microtask(() async {
-          await ref.read(pushNotificationServiceProvider).init();
+          await ref.read(pushNotificationServiceProvider).init(
+                deferPermissionPrompt: true,
+              );
           await ref
               .read(pushNotificationServiceProvider)
               .markReadyAndFlush(authenticated: true);

@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/constants.dart';
+import '../../core/i18n.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../../state/locale_state.dart';
+import '../shared/language_picker.dart';
 import 'auth_flow.dart';
 
 /// Landing: Sign in as Professional, or book as Customer.
@@ -18,6 +19,7 @@ class AuthLandingScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final compact = context.isCompactHeight;
+    final l = ref.watch(lProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
@@ -37,18 +39,21 @@ class AuthLandingScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         SizedBox(height: compact ? 8 : 16),
-                        _BrandHero(compact: compact),
+                        _BrandHero(
+                          compact: compact,
+                          tagline: l.t('auth.landing.tagline'),
+                        ),
                         SizedBox(height: compact ? 20 : 28),
                         Text(
-                          'How do you want to continue?',
+                          l.t('auth.landing.continue_title'),
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w800,
                               ),
                         ),
                         const SizedBox(height: 6),
-                        const Text(
-                          'Choose your role to sign in securely with OTP.',
-                          style: TextStyle(
+                        Text(
+                          l.t('auth.landing.continue_subtitle'),
+                          style: const TextStyle(
                             color: AppTheme.textMuted,
                             fontSize: 13.5,
                             height: 1.35,
@@ -57,9 +62,8 @@ class AuthLandingScreen extends ConsumerWidget {
                         SizedBox(height: compact ? 16 : 20),
                         _RoleCard(
                           icon: Icons.handyman_rounded,
-                          title: 'Sign in · Professional',
-                          subtitle:
-                              'Accept jobs near you, track earnings, and grow your work.',
+                          title: l.t('auth.landing.pro_title'),
+                          subtitle: l.t('auth.landing.pro_subtitle'),
                           accent: AppTheme.brandPrimary,
                           onTap: () {
                             ref.read(roleProvider.notifier).state =
@@ -77,9 +81,8 @@ class AuthLandingScreen extends ConsumerWidget {
                         const SizedBox(height: 12),
                         _RoleCard(
                           icon: Icons.home_repair_service_rounded,
-                          title: 'Need a Service · Customer',
-                          subtitle:
-                              'Book verified local technicians for AC, plumbing, and more.',
+                          title: l.t('auth.landing.customer_title'),
+                          subtitle: l.t('auth.landing.customer_subtitle'),
                           accent: AppTheme.brandSuccess,
                           onTap: () {
                             ref.read(roleProvider.notifier).state =
@@ -94,25 +97,6 @@ class AuthLandingScreen extends ConsumerWidget {
                             );
                           },
                         ),
-                        // Enrollment CTA kept for later — hide until re-enabled.
-                        // const SizedBox(height: 12),
-                        // OutlinedButton(
-                        //   onPressed: () async {
-                        //     ref.read(roleProvider.notifier).state =
-                        //         AppRole.professional;
-                        //     await ref.read(authProvider.notifier).beginSignUp();
-                        //     if (context.mounted) {
-                        //       context.push(
-                        //         Routes.phone,
-                        //         extra: const AuthFlow(
-                        //           mode: AuthMode.signUp,
-                        //           role: AppRole.professional,
-                        //         ),
-                        //       );
-                        //     }
-                        //   },
-                        //   child: const Text('Enroll as a Professional'),
-                        // ),
                       ],
                     ),
                   ),
@@ -128,8 +112,9 @@ class AuthLandingScreen extends ConsumerWidget {
 }
 
 class _BrandHero extends StatelessWidget {
-  const _BrandHero({required this.compact});
+  const _BrandHero({required this.compact, required this.tagline});
   final bool compact;
+  final String tagline;
 
   @override
   Widget build(BuildContext context) {
@@ -186,7 +171,7 @@ class _BrandHero extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Trusted local repair services — for professionals and customers.',
+            tagline,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.9),
               fontSize: 14,
@@ -280,22 +265,16 @@ class _Footer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l = ref.watch(lProvider);
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           TextButton.icon(
-            onPressed: () => _showLanguageSheet(context, ref),
+            onPressed: () => showLanguagePicker(context, ref),
             icon: const Icon(Icons.translate, size: 16),
-            label: Text(
-              supportedLanguages
-                  .firstWhere(
-                    (l) => l.code == currentLang,
-                    orElse: () => supportedLanguages.first,
-                  )
-                  .nativeLabel,
-            ),
+            label: Text(languageNativeLabel(currentLang)),
           ),
           const SizedBox(width: 4),
           const Text(
@@ -305,56 +284,10 @@ class _Footer extends ConsumerWidget {
           const SizedBox(width: 4),
           TextButton(
             onPressed: () => context.push(Routes.termsAcceptance, extra: true),
-            child: const Text('Terms'),
+            child: Text(l.t('auth.landing.terms')),
           ),
         ],
       ),
-    );
-  }
-
-  void _showLanguageSheet(BuildContext context, WidgetRef ref) {
-    final current = ref.read(localeProvider).languageCode;
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Choose your language',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 12),
-                for (final lng in supportedLanguages)
-                  ListTile(
-                    onTap: () {
-                      ref.read(localeProvider.notifier).setLanguage(lng.code);
-                      Navigator.pop(ctx);
-                    },
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      lng.code == current
-                          ? Icons.check_circle
-                          : Icons.circle_outlined,
-                      color: lng.code == current
-                          ? AppTheme.brandPrimary
-                          : AppTheme.textFaint,
-                    ),
-                    title: Text(
-                      lng.nativeLabel,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(lng.label),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

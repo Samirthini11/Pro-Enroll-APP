@@ -7,6 +7,8 @@ import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
+import '../../state/categories_provider.dart';
+import '../../state/locale_state.dart';
 import '../shared/widgets.dart';
 import 'customer_route_params.dart';
 import 'customer_booking_ui.dart';
@@ -237,23 +239,31 @@ class _ProDetailScreenState extends ConsumerState<ProDetailScreen> {
             const SizedBox(height: 20),
             Text('Skills', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final s in skills)
-                  Chip(
-                    avatar: Icon(
-                      supportedCategories.where((c) => c.code == s['category_code']).firstOrNull?.icon ?? Icons.build,
-                      size: 16,
-                    ),
-                    label: Text(
-                      '${supportedCategories.where((c) => c.code == s['category_code']).firstOrNull?.nameEn ?? s['category_code']} · ${s['experience_years']}y',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-              ],
-            ),
+            Builder(builder: (context) {
+              final lang = ref.watch(localeProvider).languageCode;
+              final categories = ref.watch(categoriesListProvider);
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final s in skills)
+                    Builder(builder: (_) {
+                      final cat = categories.tryByCode('${s['category_code']}') ??
+                          supportedCategories.tryByCode('${s['category_code']}');
+                      final name = cat?.name(lang) ?? '${s['category_code']}';
+                      final years = (s['experience_years'] as num?)?.toInt() ?? 0;
+                      final start = (s['experience_start_year'] as num?)?.toInt();
+                      final label = (start != null && start > 0)
+                          ? '$name · since $start · ${years}y'
+                          : '$name · ${years}y';
+                      return Chip(
+                        avatar: Icon(cat?.icon ?? Icons.build, size: 16),
+                        label: Text(label, style: const TextStyle(fontSize: 12)),
+                      );
+                    }),
+                ],
+              );
+            }),
             const SizedBox(height: 20),
             Card(
               child: Padding(

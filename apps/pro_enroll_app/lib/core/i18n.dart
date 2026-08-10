@@ -66,6 +66,43 @@ const _strings = <String, Map<String, String>>{
     'en': 'Choose your language',
     'ta': 'உங்கள் மொழியை தேர்வு செய்க',
   },
+  'lang.subtitle': {
+    'en': 'Pick Tamil or English',
+    'ta': 'மொழியைத் தேர்ந்தெடுக்கவும்',
+  },
+
+  // Auth landing (sign-in home)
+  'auth.landing.tagline': {
+    'en':
+        'Trusted local repair services — for professionals and customers.',
+    'ta':
+        'நம்பகமான உள்ளூர் பழுது சேவைகள் — நிபுணர்களுக்கும் வாடிக்கையாளர்களுக்கும்.',
+  },
+  'auth.landing.continue_title': {
+    'en': 'How do you want to continue?',
+    'ta': 'எப்படி தொடர விரும்புகிறீர்கள்?',
+  },
+  'auth.landing.continue_subtitle': {
+    'en': 'Choose your role to sign in securely with OTP.',
+    'ta': 'OTP மூலம் பாதுகாப்பாக உள்நுழைய உங்கள் பாத்திரத்தைத் தேர்ந்தெடுக்கவும்.',
+  },
+  'auth.landing.pro_title': {
+    'en': 'Sign in · Professional',
+    'ta': 'உள்நுழை · நிபுணர்',
+  },
+  'auth.landing.pro_subtitle': {
+    'en': 'Accept jobs near you, track earnings, and grow your work.',
+    'ta': 'அருகிலுள்ள வேலைகளை ஏற்கவும், வருமானத்தைக் கண்காணிக்கவும், வளரவும்.',
+  },
+  'auth.landing.customer_title': {
+    'en': 'Need a Service · Customer',
+    'ta': 'சேவை தேவை · வாடிக்கையாளர்',
+  },
+  'auth.landing.customer_subtitle': {
+    'en': 'Book verified local technicians for AC, plumbing, and more.',
+    'ta': 'ஏசி, குழாய் பணி மற்றும் பலவற்றிற்கு சரிபார்க்கப்பட்ட உள்ளூர் தொழில்நுட்பர்களை முன்பதிவு செய்யுங்கள்.',
+  },
+  'auth.landing.terms': {'en': 'Terms', 'ta': 'விதிமுறைகள்'},
 
   // Phone auth
   'auth.phone.title': {
@@ -75,6 +112,36 @@ const _strings = <String, Map<String, String>>{
   'auth.phone.helper': {
     'en': 'We will send a 6-digit OTP via SMS.',
     'ta': 'நாங்கள் SMS மூலம் 6-இலக்க OTP அனுப்புவோம்.',
+  },
+  'auth.signin.title': {'en': 'Sign in', 'ta': 'உள்நுழை'},
+  'auth.signin.helper': {
+    'en':
+        'Enter the mobile number you used while enrolling. We will send a 6-digit OTP via SMS.',
+    'ta':
+        'பதிவு செய்யும் போது பயன்படுத்திய மொபைல் எண்ணை உள்ளிடவும். SMS மூலம் 6-இலக்க OTP அனுப்புவோம்.',
+  },
+  'auth.signin.send_otp': {'en': 'Send OTP', 'ta': 'OTP அனுப்பு'},
+  'auth.signup.title': {
+    'en': 'Create your account',
+    'ta': 'உங்கள் கணக்கை உருவாக்குங்கள்',
+  },
+  'auth.signup.helper': {
+    'en':
+        'Enter the mobile number we should reach you on. We will send a 6-digit OTP via SMS.',
+    'ta':
+        'நாங்கள் தொடர்புகொள்ள வேண்டிய மொபைல் எண்ணை உள்ளிடவும். SMS மூலம் 6-இலக்க OTP அனுப்புவோம்.',
+  },
+  'auth.phone.trust': {
+    'en': 'Verified pros only. We use OTP, never store your password.',
+    'ta': 'சரிபார்க்கப்பட்ட நிபுணர்கள் மட்டும். OTP பயன்படுத்துகிறோம், கடவுச்சொல்லை சேமிக்க மாட்டோம்.',
+  },
+  'auth.signin.new_here': {
+    'en': "New here? Tap back and choose 'Create account'.",
+    'ta': 'புதியவரா? பின்சென்று ‘கணக்கு உருவாக்கு’ என்பதைத் தேர்ந்தெடுக்கவும்.',
+  },
+  'auth.signup.agree': {
+    'en': 'By creating an account you agree to our Terms & Privacy Policy.',
+    'ta': 'கணக்கு உருவாக்குவதன் மூலம் விதிமுறைகள் & தனியுரிமைக் கொள்கையை ஏற்கிறீர்கள்.',
   },
   'auth.otp.title': {'en': 'Verify OTP', 'ta': 'OTP சரிபார்க்கவும்'},
   'auth.otp.helper': {
@@ -134,8 +201,12 @@ const _strings = <String, Map<String, String>>{
   },
 
   'onboarding.experience.title': {
-    'en': 'Years of experience',
-    'ta': 'எத்தனை ஆண்டு அனுபவம்?',
+    'en': 'Experience start year',
+    'ta': 'அனுபவம் தொடங்கிய ஆண்டு',
+  },
+  'onboarding.experience.start_year_label': {
+    'en': 'When did you start each service?',
+    'ta': 'ஒவ்வொரு சேவையையும் எப்போது தொடங்கினீர்கள்?',
   },
 
   'onboarding.location.title': {
@@ -171,22 +242,24 @@ const _strings = <String, Map<String, String>>{
   },
 
   'onboarding.fee.title': {
-    'en': 'Set your visiting charge',
-    'ta': 'உங்கள் வருகை கட்டணத்தை அமைக்கவும்',
+    'en': 'Set visiting charges',
+    'ta': 'வருகை கட்டணங்களை அமைக்கவும்',
   },
   'onboarding.fee.helper': {
     'en':
-        'Max ₹500. Customers only see this visit fee — platform fee (5%) is not shown to them.',
-        'ta':
-        'அதிகபட்சம் ₹500. வாடிக்கையாளருக்கு வருகை கட்டணம் மட்டும் தெரியும் — பிளாட்ஃபார்ம் கட்டணம் (5%) காட்டப்படாது.',
+        'Set a visit fee for each service (max ₹500). Customers only see the fee for the service they book.',
+    'ta':
+        'ஒவ்வொரு சேவைக்கும் வருகை கட்டணம் அமைக்கவும் (அதிகபட்சம் ₹500). வாடிக்கையாளர் பதிவு செய்யும் சேவையின் கட்டணத்தை மட்டும் பார்ப்பார்.',
   },
   'onboarding.fee.yourCharge': {
     'en': 'Your visiting charge',
     'ta': 'உங்கள் வருகை கட்டணம்',
   },
   'onboarding.fee.suggestedHint': {
-    'en': 'Suggested from your selected services — adjust if needed.',
-    'ta': 'தேர்ந்தெடுத்த சேவைகளின் அடிப்படையில் — தேவைப்பட்டால் மாற்றவும்.',
+    'en':
+        'Suggested per service — adjust if needed. Platform fee (5%) is not shown to customers.',
+    'ta':
+        'சேவை வாரியாக பரிந்துரை — தேவைப்பட்டால் மாற்றவும். பிளாட்ஃபார்ம் கட்டணம் (5%) வாடிக்கையாளருக்கு காட்டப்படாது.',
   },
 
   // KYC
@@ -237,6 +310,20 @@ const _strings = <String, Map<String, String>>{
     'ta':
         'நன்றி! எங்கள் குழு வழக்கமாக 2–4 வேலை மணி நேரத்திற்குள் புதிய நிபுணர்களை சரிபார்க்கும்.\n\nஉங்கள் கணக்கு செயல்படத் தொடங்கியதும் அறிவிப்போம்.',
   },
+  'kyc.pending.preview_hint': {
+    'en':
+        'You can continue into the app now to explore jobs, wallet, and profile while admin review finishes.',
+    'ta':
+        'நிர்வாக மதிப்பாய்வு முடியும் வரை வேலைகள், வாலட் மற்றும் சுயவிவரத்தை பார்க்க ஆப்ஸில் தொடரலாம்.',
+  },
+  'kyc.pending.continue': {
+    'en': 'Continue to app',
+    'ta': 'ஆப்பிற்கு தொடரவும்',
+  },
+  'kyc.pending.banner': {
+    'en': 'KYC under review — exploring in preview mode',
+    'ta': 'KYC மதிப்பாய்வில் — முன்னோட்ட பயன்முறை',
+  },
 
   // Home shell
   'home.tab.jobs': {'en': 'Jobs', 'ta': 'வேலைகள்'},
@@ -264,9 +351,80 @@ const _strings = <String, Map<String, String>>{
   'offer.title': {'en': 'New job offer', 'ta': 'புதிய வேலை ஆஃபர்'},
   'offer.accept': {'en': 'Accept', 'ta': 'ஏற்க'},
   'offer.reject': {'en': 'Reject', 'ta': 'நிராகரிக்க'},
+  'offer.finish_before_accept': {
+    'en':
+        'Finish your current job before accepting a new one.',
+    'ta':
+        'புதிய வேலையை ஏற்பதற்கு முன் தற்போதைய வேலையை முடிக்கவும்.',
+  },
+  'job.finish_current_first': {
+    'en':
+        'Finish or close your current job before starting the next one.',
+    'ta':
+        'அடுத்த வேலையைத் தொடங்குவதற்கு முன் தற்போதைய வேலையை முடிக்கவும் அல்லது மூடவும்.',
+  },
   'offer.timer': {
-    'en': 'Auto-rejects in {sec}s',
-    'ta': '{sec} வினாடிகளில் தானாக நிராகரிக்கப்படும்',
+    'en': 'Respond before work start · {time}',
+    'ta': 'வேலை தொடங்கும் முன் பதிலளிக்கவும் · {time}',
+  },
+  'offer.timer_left': {
+    'en': '{time} left to accept or reject',
+    'ta': 'ஏற்க அல்லது நிராகரிக்க {time} உள்ளது',
+  },
+  'offer.expired': {
+    'en':
+        'This request expired. The customer was notified to book another pro.',
+    'ta':
+        'இந்த கோரிக்கை காலாவதியானது. வாடிக்கையாளருக்கு வேறு நிபுணரை முன்பதிவு செய்ய அறிவிக்கப்பட்டது.',
+  },
+  'offer.expired_short': {
+    'en': 'Expired',
+    'ta': 'காலாவதி',
+  },
+  'job.cancel': {'en': 'Reject job', 'ta': 'வேலையை நிராகரி'},
+  'job.cancel_hint': {
+    'en': 'You can reject while on the way. After you mark arrived, finish the job.',
+    'ta': 'வரும் வழியில் இருக்கும் வரை நிராகரிக்கலாம். வந்துவிட்டேன் எனக் குறித்த பிறகு வேலையை முடிக்க வேண்டும்.',
+  },
+  'job.reject_reason_title': {
+    'en': 'Why are you rejecting?',
+    'ta': 'ஏன் நிராகரிக்கிறீர்கள்?',
+  },
+  'job.reject_reason_required': {
+    'en': 'Please choose a reason to reject this job.',
+    'ta': 'இந்த வேலையை நிராகரிக்க ஒரு காரணத்தைத் தேர்ந்தெடுக்கவும்.',
+  },
+  'job.reject_penalty_warning': {
+    'en': 'You are on the way, so a penalty of {amount} will be deducted from your wallet.',
+    'ta': 'நீங்கள் வரும் வழியில் உள்ளதால், {amount} அபராதம் உங்கள் வாலெட்டில் இருந்து கழிக்கப்படும்.',
+  },
+  'job.reject_reason.customer_unreachable': {
+    'en': 'Customer not reachable',
+    'ta': 'வாடிக்கையாளரைத் தொடர்பு கொள்ள முடியவில்லை',
+  },
+  'job.reject_reason.wrong_address': {
+    'en': 'Wrong or unclear address',
+    'ta': 'தவறான அல்லது தெளிவற்ற முகவரி',
+  },
+  'job.reject_reason.too_far': {
+    'en': 'Location too far',
+    'ta': 'இடம் மிகவும் தொலைவில் உள்ளது',
+  },
+  'job.reject_reason.vehicle_issue': {
+    'en': 'Vehicle / breakdown issue',
+    'ta': 'வாகனம் / பழுது சிக்கல்',
+  },
+  'job.reject_reason.emergency': {
+    'en': 'Personal emergency',
+    'ta': 'தனிப்பட்ட அவசரம்',
+  },
+  'job.reject_reason.other': {
+    'en': 'Other reason',
+    'ta': 'வேறு காரணம்',
+  },
+  'job.reject_reason_notes': {
+    'en': 'Add a note (optional)',
+    'ta': 'குறிப்பு சேர்க்கவும் (விருப்பம்)',
   },
 
   'job.on_the_way': {'en': 'On the way', 'ta': 'வரும் வழியில்'},
@@ -378,13 +536,142 @@ const _strings = <String, Map<String, String>>{
   },
   'profile.bookService.subtitle': {
     'en': 'Switch to customer mode — find a Plumber, AC tech, etc.',
-    'ta': 'வாடிக்கையாளர் பயன்முறைக்கு மாறு — Plumber, AC tech போன்றவர்களைக் கண்டறியுங்கள்.',
+    'ta': 'வாடிக்கையாளர் பயன்முறைக்கு மாறு — பிளம்பர், ஏசி மெக்கானிக் போன்றவர்களைக் கண்டறியுங்கள்.',
   },
+
+  // Customer home / book a service
+  'customer.home.hi': {'en': 'Hi {name}!', 'ta': 'வணக்கம் {name}!'},
+  'customer.home.need_fixed': {
+    'en': 'What do you need fixed?',
+    'ta': 'எதை சரிசெய்ய வேண்டும்?',
+  },
+  'customer.home.services': {'en': 'Services', 'ta': 'சேவைகள்'},
+  'customer.home.online_pros': {
+    'en': 'Online Professionals',
+    'ta': 'ஆன்லைன் தொழில்நுட்பர்கள்',
+  },
+  'customer.home.current_work': {
+    'en': 'Your current work',
+    'ta': 'உங்கள் தற்போதைய வேலை',
+  },
+  'customer.home.location': {'en': 'Your location', 'ta': 'உங்கள் இடம்'},
+  'customer.home.using_gps': {
+    'en': 'Using your current location',
+    'ta': 'தற்போதைய இடம் பயன்படுத்தப்படுகிறது',
+  },
+  'customer.home.detecting': {
+    'en': 'Detecting your location...',
+    'ta': 'இடம் கண்டறியப்படுகிறது...',
+  },
+  'customer.setup.title': {
+    'en': 'Your details',
+    'ta': 'உங்கள் விவரங்கள்',
+  },
+  'customer.setup.subtitle': {
+    'en':
+        'Tell us your name and location so we can match you with nearby pros.',
+    'ta':
+        'அருகிலுள்ள நிபுணர்களை இணைக்க உங்கள் பெயர் மற்றும் இடத்தைச் சொல்லுங்கள்.',
+  },
+  'customer.setup.name': {'en': 'Full name', 'ta': 'முழு பெயர்'},
+  'customer.setup.name_hint': {
+    'en': 'e.g. Priya Kumar',
+    'ta': 'எ.கா. பிரியா குமார்',
+  },
+  'customer.setup.city': {'en': 'Your city', 'ta': 'உங்கள் நகரம்'},
+  'customer.setup.detecting': {
+    'en': 'Detecting your current location…',
+    'ta': 'உங்கள் தற்போதைய இடத்தைக் கண்டறிகிறோம்…',
+  },
+  'customer.setup.using_location': {
+    'en': 'Using your current location · {city}',
+    'ta': 'உங்கள் தற்போதைய இடம் · {city}',
+  },
+  'customer.setup.gps_failed': {
+    'en': 'Could not detect GPS. Select your city below.',
+    'ta': 'GPS கண்டறிய முடியவில்லை. கீழே நகரத்தைத் தேர்ந்தெடுக்கவும்.',
+  },
+  'customer.setup.city_selected': {
+    'en': 'City selected: {city}',
+    'ta': 'தேர்ந்தெடுத்த நகரம்: {city}',
+  },
+  'customer.setup.use_current': {
+    'en': 'Use current location',
+    'ta': 'தற்போதைய இடத்தைப் பயன்படுத்து',
+  },
+  'customer.setup.phone': {
+    'en': 'Phone: {phone}',
+    'ta': 'தொலைபேசி: {phone}',
+  },
+  'customer.tab.home': {'en': 'Home', 'ta': 'முகப்பு'},
+  'customer.tab.bookings': {'en': 'Bookings', 'ta': 'முன்பதிவுகள்'},
+  'customer.tab.profile': {'en': 'Profile', 'ta': 'சுயவிவரம்'},
+  'customer.profile.title': {'en': 'Profile', 'ta': 'சுயவிவரம்'},
+  'customer.profile.location': {'en': 'Location', 'ta': 'இடம்'},
+  'customer.profile.language': {'en': 'Language', 'ta': 'மொழி'},
+  'customer.profile.switch_pro': {
+    'en': 'Switch to Professional',
+    'ta': 'தொழில்முறைக்கு மாறு',
+  },
+  'customer.profile.switch_pro_sub': {
+    'en': 'Receive jobs for your enrolled services (AC, Plumber, …)',
+    'ta': 'பதிவு செய்த சேவைகளுக்கான வேலைகளைப் பெறுங்கள் (ஏசி, பிளம்பர், …)',
+  },
+  'customer.profile.signout': {'en': 'Sign Out', 'ta': 'வெளியேறு'},
 
   'help.title': {'en': 'Help & Support', 'ta': 'உதவி & ஆதரவு'},
   'help.call': {'en': 'Call support', 'ta': 'ஆதரவை அழைக்க'},
   'help.whatsapp': {'en': 'WhatsApp us', 'ta': 'WhatsApp மூலம் தொடர்பு'},
   'help.faq': {'en': 'FAQ', 'ta': 'அடிக்கடி கேட்கப்படும் கேள்விகள்'},
+  'help.experience_edit.title': {
+    'en': 'Update experience years',
+    'ta': 'அனுபவ ஆண்டுகளை புதுப்பிக்க',
+  },
+  'help.experience_edit.locked_body': {
+    'en':
+        'After enrollment, experience start year is locked. Raise a request for admin approval to edit it.',
+    'ta':
+        'பதிவுக்குப் பிறகு அனுபவ தொடக்க ஆண்டு பூட்டப்பட்டிருக்கும். திருத்த நிர்வாக ஒப்புதலுக்கு கோரிக்கை அனுப்பவும்.',
+  },
+  'help.experience_edit.unlocked_body': {
+    'en':
+        'Admin unlocked experience editing. Open Profile → My services, update the year, and save.',
+    'ta':
+        'நிர்வாகம் அனுபவ திருத்தத்தை அனுமதித்துள்ளது. சுயவிவரம் → என் சேவைகள் என்பதில் ஆண்டை மாற்றி சேமிக்கவும்.',
+  },
+  'help.experience_edit.pending': {
+    'en': 'Request pending — waiting for admin approval.',
+    'ta': 'கோரிக்கை நிலுவையில் — நிர்வாக ஒப்புதலுக்காக காத்திருக்கிறது.',
+  },
+  'help.experience_edit.request': {
+    'en': 'Raise request to admin',
+    'ta': 'நிர்வாகத்திற்கு கோரிக்கை அனுப்பு',
+  },
+  'help.experience_edit.submit': {'en': 'Submit request', 'ta': 'கோரிக்கை அனுப்பு'},
+  'help.experience_edit.reason': {
+    'en': 'Reason (optional)',
+    'ta': 'காரணம் (விருப்பம்)',
+  },
+  'help.experience_edit.dialog_body': {
+    'en':
+        'Admin will review your request. After approval you can edit experience years once from Profile.',
+    'ta':
+        'நிர்வாகம் உங்கள் கோரிக்கையை பரிசீலிக்கும். ஒப்புதலுக்குப் பிறகு சுயவிவரத்தில் அனுபவ ஆண்டை ஒருமுறை திருத்தலாம்.',
+  },
+  'help.experience_edit.sent': {
+    'en': 'Request sent to admin',
+    'ta': 'கோரிக்கை நிர்வாகத்திற்கு அனுப்பப்பட்டது',
+  },
+  'help.experience_edit.go_profile': {
+    'en': 'You can edit experience years now on Profile.',
+    'ta': 'இப்போது சுயவிவரத்தில் அனுபவ ஆண்டுகளை திருத்தலாம்.',
+  },
+  'help.experience_edit.locked_hint': {
+    'en':
+        'Experience year is locked. Go to Help and raise a request for admin approval.',
+    'ta':
+        'அனுபவ ஆண்டு பூட்டப்பட்டுள்ளது. உதவி தாவலுக்குச் சென்று நிர்வாக ஒப்புதலுக்கு கோரிக்கை அனுப்பவும்.',
+  },
 };
 
 class L {

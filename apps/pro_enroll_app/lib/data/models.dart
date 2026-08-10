@@ -20,6 +20,7 @@ enum BookingStatus {
   onTheWay,
   arrived,
   inProgress,
+  awaitingPayment,
   completed,
   cancelled,
 }
@@ -28,12 +29,37 @@ class ProSkill {
   ProSkill({
     required this.categoryCode,
     required this.experienceYears,
+    this.experienceStartYear,
     this.isPrimary = false,
+    this.visitFeePaise = 15000,
   });
 
   final String categoryCode;
+  /// Calculated years (from API: current IST year − start year).
   final int experienceYears;
+  /// Calendar year the pro started this service.
+  final int? experienceStartYear;
   final bool isPrimary;
+  /// Visiting charge for this service (paise).
+  final int visitFeePaise;
+
+  int get effectiveStartYear =>
+      experienceStartYear ?? (DateTime.now().year - experienceYears.clamp(0, 50));
+
+  ProSkill copyWith({
+    int? experienceYears,
+    int? experienceStartYear,
+    bool? isPrimary,
+    int? visitFeePaise,
+  }) {
+    return ProSkill(
+      categoryCode: categoryCode,
+      experienceYears: experienceYears ?? this.experienceYears,
+      experienceStartYear: experienceStartYear ?? this.experienceStartYear,
+      isPrimary: isPrimary ?? this.isPrimary,
+      visitFeePaise: visitFeePaise ?? this.visitFeePaise,
+    );
+  }
 }
 
 class ProProfile {
@@ -56,6 +82,8 @@ class ProProfile {
     this.proScore = 50,
     this.listingHeld = false,
     this.freeBookingsUsed = 0,
+    this.canEditExperience = true,
+    this.experienceEditRequestStatus,
   });
 
   final String? fullName;
@@ -76,12 +104,42 @@ class ProProfile {
   final int proScore;
   final bool listingHeld;
   final int freeBookingsUsed;
+  /// False after enrollment until admin unlocks an experience-year edit.
+  final bool canEditExperience;
+  /// pending | approved | rejected | used (latest Help request).
+  final String? experienceEditRequestStatus;
 
   bool get isComplete =>
       fullName != null &&
       cityId != null &&
       skills.isNotEmpty &&
       visitFeePaise > 0;
+
+  /// Fee for a service category (skill fee, else profile fallback).
+  int visitFeePaiseFor(String categoryCode) {
+    for (final s in skills) {
+      if (s.categoryCode == categoryCode && s.visitFeePaise > 0) {
+        return s.visitFeePaise;
+      }
+    }
+    return visitFeePaise;
+  }
+
+  /// Lowest skill fee (for "from ₹X" labels).
+  int get minVisitFeePaise {
+    if (skills.isEmpty) return visitFeePaise;
+    var min = skills.first.visitFeePaise;
+    for (final s in skills) {
+      if (s.visitFeePaise > 0 && s.visitFeePaise < min) min = s.visitFeePaise;
+    }
+    return min > 0 ? min : visitFeePaise;
+  }
+
+  bool get hasVaryingVisitFees {
+    if (skills.length < 2) return false;
+    final first = skills.first.visitFeePaise;
+    return skills.any((s) => s.visitFeePaise != first);
+  }
 
   ProProfile copyWith({
     String? fullName,
@@ -102,6 +160,9 @@ class ProProfile {
     int? proScore,
     bool? listingHeld,
     int? freeBookingsUsed,
+    bool? canEditExperience,
+    String? experienceEditRequestStatus,
+    bool clearExperienceEditRequestStatus = false,
   }) {
     return ProProfile(
       fullName: fullName ?? this.fullName,
@@ -122,6 +183,10 @@ class ProProfile {
       proScore: proScore ?? this.proScore,
       listingHeld: listingHeld ?? this.listingHeld,
       freeBookingsUsed: freeBookingsUsed ?? this.freeBookingsUsed,
+      canEditExperience: canEditExperience ?? this.canEditExperience,
+      experienceEditRequestStatus: clearExperienceEditRequestStatus
+          ? null
+          : (experienceEditRequestStatus ?? this.experienceEditRequestStatus),
     );
   }
 }
@@ -157,6 +222,11 @@ class JobOffer {
     required this.preferredTime,
     required this.expiresAt,
     this.commissionPreview,
+    this.customerLat,
+    this.customerLng,
+    this.canReject = true,
+    this.cancelsRemainingToday,
+    this.dailyCancelLimit = 5,
   });
 
   final String id;
@@ -170,6 +240,13 @@ class JobOffer {
   final DateTime preferredTime;
   final DateTime expiresAt;
   final CommissionPreview? commissionPreview;
+  final double? customerLat;
+  final double? customerLng;
+  final bool canReject;
+  final int? cancelsRemainingToday;
+  final int dailyCancelLimit;
+
+  bool get hasServiceLocation => customerLat != null && customerLng != null;
 }
 
 class ActiveJob {
@@ -191,6 +268,12 @@ class ActiveJob {
     this.customerLng,
     this.commissionPreview,
     this.proCreditPaise,
+    this.scheduledAt,
+    this.canCancel = false,
+    this.rejectRequiresReason = false,
+    this.rejectPenaltyPaise = 0,
+    this.cancelsRemainingToday,
+    this.dailyCancelLimit = 5,
   });
 
   final String id;
@@ -210,12 +293,28 @@ class ActiveJob {
   final double? customerLng;
   final CommissionPreview? commissionPreview;
   final int? proCreditPaise;
+  final DateTime? scheduledAt;
+  final bool canCancel;
+
+  /// Rejecting now (while on the way) needs a reason from the pro.
+  final bool rejectRequiresReason;
+
+  /// Wallet penalty (paise) charged if the pro rejects now. 0 = no penalty.
+  final int rejectPenaltyPaise;
+  final int? cancelsRemainingToday;
+  final int dailyCancelLimit;
 
   ActiveJob copyWith({
     BookingStatus? status,
     int? finalAmountPaise,
     CommissionPreview? commissionPreview,
     int? proCreditPaise,
+    DateTime? scheduledAt,
+    bool? canCancel,
+    bool? rejectRequiresReason,
+    int? rejectPenaltyPaise,
+    int? cancelsRemainingToday,
+    int? dailyCancelLimit,
   }) {
     return ActiveJob(
       id: id,
@@ -235,8 +334,80 @@ class ActiveJob {
       customerLng: customerLng,
       commissionPreview: commissionPreview ?? this.commissionPreview,
       proCreditPaise: proCreditPaise ?? this.proCreditPaise,
+      scheduledAt: scheduledAt ?? this.scheduledAt,
+      canCancel: canCancel ?? this.canCancel,
+      rejectRequiresReason: rejectRequiresReason ?? this.rejectRequiresReason,
+      rejectPenaltyPaise: rejectPenaltyPaise ?? this.rejectPenaltyPaise,
+      cancelsRemainingToday: cancelsRemainingToday ?? this.cancelsRemainingToday,
+      dailyCancelLimit: dailyCancelLimit ?? this.dailyCancelLimit,
     );
   }
+}
+
+/// Past / recent booking row on the professional Jobs tab.
+class ProJobHistoryItem {
+  ProJobHistoryItem({
+    required this.id,
+    required this.code,
+    required this.categoryCode,
+    required this.problem,
+    required this.customerName,
+    required this.customerAreaName,
+    required this.visitFeePaise,
+    required this.status,
+    required this.statusLabel,
+    this.categoryName,
+    this.customerPhoneE164,
+    this.customerPhoneMasked,
+    this.proCreditPaise,
+    this.commissionPaise,
+    this.commissionWaived = false,
+    this.visitFeePaid = false,
+    this.visitFeePaymentMethod,
+    this.ratingStars,
+    this.ratingReview,
+    this.createdAt,
+    this.completedAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  final String code;
+  final String categoryCode;
+  final String? categoryName;
+  final String problem;
+  final String customerName;
+  final String customerAreaName;
+  final String? customerPhoneE164;
+  final String? customerPhoneMasked;
+  final int visitFeePaise;
+  final int? proCreditPaise;
+  final int? commissionPaise;
+  final bool commissionWaived;
+  final String status;
+  final String statusLabel;
+  final bool visitFeePaid;
+  final String? visitFeePaymentMethod;
+  final int? ratingStars;
+  final String? ratingReview;
+  final DateTime? createdAt;
+  final DateTime? completedAt;
+  final DateTime? updatedAt;
+
+  DateTime? get displayAt => completedAt ?? updatedAt ?? createdAt;
+
+  bool get isLive => const [
+        'confirmed',
+        'en_route',
+        'arrived',
+        'in_progress',
+        'awaiting_payment',
+      ].contains(status);
+
+  bool get canContactCustomer =>
+      isLive &&
+      customerPhoneE164 != null &&
+      customerPhoneE164!.trim().isNotEmpty;
 }
 
 class EarningsSummary {
@@ -251,7 +422,7 @@ class EarningsSummary {
     this.ratingAvg,
     this.ratingCount,
     this.jobsCompleted,
-    this.visitCommissionPercent = 5,
+    this.visitCommissionPercent = 10,
     this.freeBookingLimit = 5,
     this.freeBookingsUsed = 0,
     this.freeBookingsRemaining = 5,
@@ -259,9 +430,14 @@ class EarningsSummary {
     this.commissionTodayPaise = 0,
     this.commissionNote,
     this.platformFeeDuePaise = 0,
+    this.walletMinAcceptPaise = 5000,
+    this.walletRechargeMinPaise = 5000,
+    this.suggestedRechargePaise = 5000,
+    this.canAcceptJobs = true,
     this.companyUpiId,
     this.companyUpiName,
     this.companyUpiPayUri,
+    this.pendingRechargePaise = 0,
   });
 
   final int todayPaise;
@@ -270,7 +446,7 @@ class EarningsSummary {
   final int payoutsThisMonthPaise;
   final int pendingPayoutPaise;
   final int jobsToday;
-  /// Available balance = credited jobs not yet paid out.
+  /// Prepaid wallet balance (recharges − platform fee deductions).
   final int walletBalancePaise;
   final double? ratingAvg;
   final int? ratingCount;
@@ -283,9 +459,42 @@ class EarningsSummary {
   final int commissionTodayPaise;
   final String? commissionNote;
   final int platformFeeDuePaise;
+  final int walletMinAcceptPaise;
+  final int walletRechargeMinPaise;
+  final int suggestedRechargePaise;
+  final bool canAcceptJobs;
   final String? companyUpiId;
   final String? companyUpiName;
   final String? companyUpiPayUri;
+  /// Submitted recharges still waiting for admin approval.
+  final int pendingRechargePaise;
+}
+
+/// A wallet top-up submitted to admin for approval.
+class WalletRechargeRequest {
+  WalletRechargeRequest({
+    required this.id,
+    required this.amountPaise,
+    required this.utr,
+    required this.status,
+    required this.statusLabel,
+    this.rejectedReason,
+    this.createdAt,
+    this.reviewedAt,
+  });
+
+  final String id;
+  final int amountPaise;
+  final String utr;
+  final String status;
+  final String statusLabel;
+  final String? rejectedReason;
+  final DateTime? createdAt;
+  final DateTime? reviewedAt;
+
+  bool get isPending => status == 'pending';
+  bool get isApproved => status == 'approved';
+  bool get isRejected => status == 'rejected';
 }
 
 class CreditHistoryItem {
@@ -302,6 +511,7 @@ class CreditHistoryItem {
     this.utr,
     this.completedAt,
     this.label,
+    this.entryType,
   });
 
   final String id;
@@ -316,6 +526,11 @@ class CreditHistoryItem {
   final String? utr;
   final DateTime? completedAt;
   final String? label;
+  /// recharge | commission_debit | null (legacy job credit)
+  final String? entryType;
+
+  bool get isRecharge => entryType == 'recharge' || creditPaise > 0 && entryType != null;
+  bool get isDebit => entryType == 'commission_debit' || creditPaise < 0;
 }
 
 /// ─── Customer-side models ──────────────────────────────────────────────
@@ -430,6 +645,11 @@ class CustomerBooking {
     this.visitFeePaid = false,
     this.visitFeePaymentMethod,
     this.tracking,
+    this.apiCanCancel,
+    this.cancelHint,
+    this.cancelUnlockAt,
+    this.cancelsRemainingToday,
+    this.dailyCancelLimit = 5,
   });
   final int id;
   final int professionalId;
@@ -457,6 +677,12 @@ class CustomerBooking {
   final bool visitFeePaid;
   final String? visitFeePaymentMethod;
   final BookingLiveTracking? tracking;
+  /// Server decision: confirmed, or en_route after 10 min stuck.
+  final bool? apiCanCancel;
+  final String? cancelHint;
+  final DateTime? cancelUnlockAt;
+  final int? cancelsRemainingToday;
+  final int dailyCancelLimit;
 
   /// Show live map + ETA only until work starts (not during repair).
   bool get isTrackable => const ['en_route', 'arrived'].contains(status);
@@ -468,17 +694,10 @@ class CustomerBooking {
         'awaiting_payment',
       ].contains(status);
 
-  /// Cancel allowed only before technician is on the way.
-  bool get canCancel => status == 'confirmed';
+  /// Prefer API flag; fall back to confirmed-only for older payloads.
+  bool get canCancel => apiCanCancel ?? (status == 'confirmed');
+  /// Payment confirms work and closes the booking (no separate Complete step).
   bool get canPayVisitFee => !visitFeePaid && status == 'awaiting_payment';
-  bool get canComplete =>
-      visitFeePaid &&
-      const [
-        'en_route',
-        'arrived',
-        'in_progress',
-        'awaiting_payment',
-      ].contains(status);
   bool get canRate => status == 'completed' && rating == null;
   bool get hasFinalAmount => finalAmountPaise != null && finalAmountPaise! >= 100;
   int get displayAmountPaise => hasFinalAmount ? finalAmountPaise! : visitFeePaise;
@@ -495,7 +714,7 @@ String customerStatusLabel(String status) {
     'en_route' => 'Technician en route',
     'arrived' => 'Arrived',
     'in_progress' => 'Repair in progress',
-    'awaiting_payment' => 'Awaiting payment',
+    'awaiting_payment' => 'Confirm & pay visit fee',
     'completed' => 'Completed',
     'cancelled' => 'Cancelled',
     _ => status.replaceAll('_', ' '),

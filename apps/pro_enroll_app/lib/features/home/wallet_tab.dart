@@ -21,21 +21,53 @@ class WalletTab extends ConsumerStatefulWidget {
 
 class _WalletTabState extends ConsumerState<WalletTab> {
   final _utrController = TextEditingController();
+  final _customAmountController = TextEditingController();
   bool _submitting = false;
+  int? _selectedAmountPaise;
 
   @override
   void dispose() {
     _utrController.dispose();
+    _customAmountController.dispose();
     super.dispose();
   }
 
   Future<void> _refresh() async {
     ref.invalidate(earningsProvider);
     ref.invalidate(creditHistoryProvider);
+    ref.invalidate(rechargeRequestsProvider);
     await Future.wait([
+      ref.read(profileProvider.notifier).loadFromApi(),
       ref.read(earningsProvider.future),
       ref.read(creditHistoryProvider.future),
+      ref.read(rechargeRequestsProvider.future),
     ]);
+  }
+
+  int _amountPaise(EarningsSummary e) {
+    if (_selectedAmountPaise != null) return _selectedAmountPaise!;
+    final custom = int.tryParse(_customAmountController.text.trim());
+    if (custom != null && custom > 0) return custom * 100;
+    return e.suggestedRechargePaise > 0
+        ? e.suggestedRechargePaise
+        : e.walletRechargeMinPaise;
+  }
+
+  String _payUri(EarningsSummary e, int amountPaise) {
+    final upiId = e.companyUpiId ?? 'sami050699@okaxis';
+    final upiName = e.companyUpiName ?? 'Pro Enroll';
+    final am = (amountPaise / 100).toStringAsFixed(2);
+    return Uri(
+      scheme: 'upi',
+      host: 'pay',
+      queryParameters: {
+        'pa': upiId,
+        'pn': upiName,
+        'am': am,
+        'cu': 'INR',
+        'tn': 'Pro Enroll wallet recharge',
+      },
+    ).toString();
   }
 
   Future<void> _openUpi(String payUri) async {
@@ -52,26 +84,43 @@ class _WalletTabState extends ConsumerState<WalletTab> {
     }
   }
 
-  Future<void> _markPaid(EarningsSummary earnings) async {
+  Future<void> _recharge(EarningsSummary earnings) async {
+    final amount = _amountPaise(earnings);
+    final min = earnings.walletRechargeMinPaise;
+    if (amount < min) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Minimum recharge is ${formatPaise(min)}'),
+        ),
+      );
+      return;
+    }
     final utr = _utrController.text.trim().replaceAll(RegExp(r'\s+'), '');
     if (utr.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Enter UTR number from your UPI payment (min 8 characters)'),
+          content: Text('Enter UTR from your UPI payment (min 8 characters)'),
         ),
       );
       return;
     }
     setState(() => _submitting = true);
     try {
-      await ref.read(repositoryProvider).markPlatformFeePaid(utr: utr);
+      await ref.read(repositoryProvider).rechargeWallet(
+            amountPaise: amount,
+            utr: utr,
+          );
       _utrController.clear();
       ref.invalidate(earningsProvider);
       ref.invalidate(creditHistoryProvider);
+      ref.invalidate(rechargeRequestsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Platform fee marked as paid'),
+          SnackBar(
+            content: Text(
+              'Sent ${formatPaise(amount)} for admin approval. '
+              'Wallet is credited once approved.',
+            ),
             backgroundColor: AppTheme.brandSuccess,
           ),
         );
@@ -80,32 +129,13 @@ class _WalletTabState extends ConsumerState<WalletTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e is ApiException ? e.message : 'Could not update'),
+            content: Text(e is ApiException ? e.message : 'Could not recharge'),
           ),
         );
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
-  }
-
-  String _payUri(EarningsSummary e) {
-    final fromApi = e.companyUpiPayUri;
-    if (fromApi != null && fromApi.isNotEmpty) return fromApi;
-    final upiId = e.companyUpiId ?? 'sami050699@okaxis';
-    final upiName = e.companyUpiName ?? 'Pro Enroll';
-    final am = (e.platformFeeDuePaise / 100).toStringAsFixed(2);
-    return Uri(
-      scheme: 'upi',
-      host: 'pay',
-      queryParameters: {
-        'pa': upiId,
-        'pn': upiName,
-        'am': am,
-        'cu': 'INR',
-        'tn': 'Pro Enroll platform fee',
-      },
-    ).toString();
   }
 
   @override
@@ -141,9 +171,10 @@ class _WalletTabState extends ConsumerState<WalletTab> {
         ),
       ),
       data: (earnings) {
+        final amount = _amountPaise(earnings);
+        final payUri = _payUri(earnings, amount);
         final upiId = earnings.companyUpiId ?? 'sami050699@okaxis';
-        final due = earnings.platformFeeDuePaise;
-        final payUri = _payUri(earnings);
+        final minRupees = (earnings.walletMinAcceptPaise / 100).round();
 
         return RefreshIndicator(
           onRefresh: _refresh,
@@ -159,30 +190,71 @@ class _WalletTabState extends ConsumerState<WalletTab> {
                 parent: BouncingScrollPhysics(),
               ),
               children: [
-                Text(
-                  'Wallet',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
+                Text('Wallet', style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 4),
-                const Text(
-                  'Balance, platform fee payment, and credit history',
-                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13.5),
+                Text(
+                  'First ${earnings.freeBookingLimit} jobs free. Then keep min ₹$minRupees — '
+                  '${earnings.visitCommissionPercent}% of visit fee deducted per job.',
+                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 13.5),
                 ),
                 const SizedBox(height: 16),
-                _WalletBalanceCard(balancePaise: earnings.walletBalancePaise),
+                _WalletBalanceCard(
+                  balancePaise: earnings.walletBalancePaise,
+                  minPaise: earnings.walletMinAcceptPaise,
+                  freeLeft: earnings.freeBookingsRemaining,
+                  canAccept: earnings.canAcceptJobs,
+                  pendingRechargePaise: earnings.pendingRechargePaise,
+                ),
+                ref.watch(rechargeRequestsProvider).maybeWhen(
+                      data: (requests) {
+                        final visible = requests.take(3).toList();
+                        if (visible.isEmpty) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Column(
+                            children: [
+                              for (final r in visible) ...[
+                                _RechargeStatusTile(request: r),
+                                const SizedBox(height: 8),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                      orElse: () => const SizedBox.shrink(),
+                    ),
+                if (earnings.commissionNote != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    earnings.commissionNote!,
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 12.5,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
-                _PlatformFeePayCard(
+                _RechargeCard(
                   upiId: upiId,
-                  duePaise: due,
+                  amountPaise: amount,
+                  minPaise: earnings.walletRechargeMinPaise,
                   payUri: payUri,
+                  selectedPaise: _selectedAmountPaise,
+                  customController: _customAmountController,
                   utrController: _utrController,
                   submitting: _submitting,
+                  onSelectPreset: (p) => setState(() {
+                    _selectedAmountPaise = p;
+                    _customAmountController.clear();
+                  }),
+                  onCustomChanged: (_) => setState(() => _selectedAmountPaise = null),
                   onOpenUpi: () => _openUpi(payUri),
-                  onMarkPaid: due > 0 ? () => _markPaid(earnings) : null,
+                  onConfirm: () => _recharge(earnings),
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'Credit history',
+                  'Wallet history',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 17,
@@ -210,7 +282,7 @@ class _WalletTabState extends ConsumerState<WalletTab> {
                           border: Border.all(color: AppTheme.border),
                         ),
                         child: const Text(
-                          'No credits yet. Completed jobs will show here.',
+                          'No wallet activity yet. Recharges and job fee deductions appear here.',
                           style: TextStyle(color: AppTheme.textMuted, fontSize: 13.5),
                         ),
                       );
@@ -218,7 +290,7 @@ class _WalletTabState extends ConsumerState<WalletTab> {
                     return Column(
                       children: [
                         for (final item in items) ...[
-                          _CreditHistoryTile(item: item),
+                          _WalletHistoryTile(item: item),
                           const SizedBox(height: 10),
                         ],
                       ],
@@ -235,77 +307,178 @@ class _WalletTabState extends ConsumerState<WalletTab> {
 }
 
 class _WalletBalanceCard extends StatelessWidget {
-  const _WalletBalanceCard({required this.balancePaise});
+  const _WalletBalanceCard({
+    required this.balancePaise,
+    required this.minPaise,
+    required this.freeLeft,
+    required this.canAccept,
+    this.pendingRechargePaise = 0,
+  });
 
   final int balancePaise;
+  final int minPaise;
+  final int freeLeft;
+  final bool canAccept;
+  final int pendingRechargePaise;
 
   @override
   Widget build(BuildContext context) {
+    final low = freeLeft <= 0 && balancePaise < minPaise;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0F766E), Color(0xFF115E59)],
+        gradient: LinearGradient(
+          colors: low
+              ? const [Color(0xFFB45309), Color(0xFF92400E)]
+              : const [Color(0xFF0F766E), Color(0xFF115E59)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0F766E).withValues(alpha: 0.28),
+            color: (low ? const Color(0xFFB45309) : const Color(0xFF0F766E))
+                .withValues(alpha: 0.28),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.account_balance_wallet_rounded,
-              color: Colors.white,
-              size: 26,
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Prepaid wallet',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      formatPaise(balancePaise),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            freeLeft > 0
+                ? '$freeLeft free job${freeLeft == 1 ? '' : 's'} left · then min ${formatPaise(minPaise)}'
+                : low
+                    ? 'Below minimum ${formatPaise(minPaise)} — recharge to accept jobs'
+                    : canAccept
+                        ? 'Ready to accept jobs · min ${formatPaise(minPaise)}'
+                        : 'Recharge to accept jobs',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(width: 14),
+          if (pendingRechargePaise > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${formatPaise(pendingRechargePaise)} awaiting admin approval',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.95),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RechargeStatusTile extends StatelessWidget {
+  const _RechargeStatusTile({required this.request});
+
+  final WalletRechargeRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, icon) = request.isApproved
+        ? (AppTheme.brandSuccess, Icons.check_circle_outline)
+        : request.isRejected
+            ? (AppTheme.brandDanger, Icons.cancel_outlined)
+            : (AppTheme.brandAccentDark, Icons.hourglass_top);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Wallet balance',
+                  '${formatPaise(request.amountPaise)} · ${request.statusLabel}',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.9),
                     fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  formatPaise(balancePaise),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
+                    fontSize: 13.5,
+                    color: color,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Available for next payout',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
+                  'UTR ${request.utr}',
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
                   ),
                 ),
+                if (request.rejectedReason != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    request.rejectedReason!,
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -315,24 +488,36 @@ class _WalletBalanceCard extends StatelessWidget {
   }
 }
 
-class _PlatformFeePayCard extends StatelessWidget {
-  const _PlatformFeePayCard({
+class _RechargeCard extends StatelessWidget {
+  const _RechargeCard({
     required this.upiId,
-    required this.duePaise,
+    required this.amountPaise,
+    required this.minPaise,
     required this.payUri,
+    required this.selectedPaise,
+    required this.customController,
     required this.utrController,
     required this.submitting,
+    required this.onSelectPreset,
+    required this.onCustomChanged,
     required this.onOpenUpi,
-    required this.onMarkPaid,
+    required this.onConfirm,
   });
 
   final String upiId;
-  final int duePaise;
+  final int amountPaise;
+  final int minPaise;
   final String payUri;
+  final int? selectedPaise;
+  final TextEditingController customController;
   final TextEditingController utrController;
   final bool submitting;
+  final ValueChanged<int> onSelectPreset;
+  final ValueChanged<String> onCustomChanged;
   final VoidCallback onOpenUpi;
-  final VoidCallback? onMarkPaid;
+  final VoidCallback onConfirm;
+
+  static const _presets = [5000, 10000, 20000, 50000]; // ₹50, 100, 200, 500
 
   @override
   Widget build(BuildContext context) {
@@ -353,7 +538,7 @@ class _PlatformFeePayCard extends StatelessWidget {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Pay platform fee to company',
+                  'Recharge via company UPI',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 15,
@@ -365,13 +550,40 @@ class _PlatformFeePayCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            duePaise > 0
-                ? 'Pay ${formatPaise(duePaise)} via UPI, then enter UTR to mark as paid.'
-                : 'No platform fee due. You can still open company UPI if needed.',
+            'Pay to company UPI, enter UTR, then submit. Status stays Pending until admin verifies UTR and amount — only then wallet balance updates. Min ${formatPaise(minPaise)}.',
             style: const TextStyle(
               color: AppTheme.textMuted,
               fontSize: 13,
               height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final p in _presets)
+                ChoiceChip(
+                  label: Text(formatPaise(p)),
+                  selected: selectedPaise == p,
+                  onSelected: (_) => onSelectPreset(p),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: customController,
+            keyboardType: TextInputType.number,
+            onChanged: onCustomChanged,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6),
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Custom amount (₹)',
+              hintText: 'e.g. 150',
+              border: OutlineInputBorder(),
+              isDense: true,
             ),
           ),
           const SizedBox(height: 14),
@@ -424,89 +636,85 @@ class _PlatformFeePayCard extends StatelessWidget {
               ),
             ],
           ),
-          if (duePaise > 0) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Amount due: ${formatPaise(duePaise)}',
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
-                color: AppTheme.textPrimary,
-              ),
+          Text(
+            'Pay: ${formatPaise(amountPaise)}',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              color: AppTheme.textPrimary,
             ),
-          ],
+          ),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: onOpenUpi,
               icon: const Icon(Icons.payment),
-              label: Text(
-                duePaise > 0
-                    ? 'Pay ${formatPaise(duePaise)} via UPI'
-                    : 'Open UPI',
-              ),
+              label: Text('Pay ${formatPaise(amountPaise)} via UPI'),
             ),
           ),
-          if (duePaise > 0) ...[
-            const SizedBox(height: 14),
-            const Text(
-              'Enter UTR Number',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: AppTheme.textPrimary,
-              ),
+          const SizedBox(height: 14),
+          const Text(
+            'Enter UTR Number',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              color: AppTheme.textPrimary,
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: utrController,
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-                LengthLimitingTextInputFormatter(64),
-              ],
-              decoration: const InputDecoration(
-                hintText: 'e.g. 123456789012',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: utrController,
+            textCapitalization: TextCapitalization.characters,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+              LengthLimitingTextInputFormatter(64),
+            ],
+            decoration: const InputDecoration(
+              hintText: 'e.g. 123456789012',
+              border: OutlineInputBorder(),
+              isDense: true,
             ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: submitting || onMarkPaid == null ? null : onMarkPaid,
-                child: submitting
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Mark as paid'),
-              ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: submitting ? null : onConfirm,
+              child: submitting
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Submit for admin approval'),
             ),
-          ],
+          ),
         ],
       ),
     );
   }
 }
 
-class _CreditHistoryTile extends StatelessWidget {
-  const _CreditHistoryTile({required this.item});
+class _WalletHistoryTile extends StatelessWidget {
+  const _WalletHistoryTile({required this.item});
 
   final CreditHistoryItem item;
 
   @override
   Widget build(BuildContext context) {
     final when = item.completedAt;
-    final whenLabel = when != null
-        ? IstTime.formatDateTime(when)
-        : '';
-    final feeDue = !item.platformFeePaid &&
-        !item.commissionWaived &&
-        item.commissionPaise > 0;
+    final whenLabel = when != null ? IstTime.formatDateTime(when) : '';
+    final isDebit = item.isDebit || item.creditPaise < 0;
+    final amount = item.creditPaise;
+    final title = item.label ??
+        (item.entryType == 'recharge'
+            ? 'Wallet recharge'
+            : item.entryType == 'commission_debit'
+                ? 'Platform fee deducted'
+                : (item.bookingCode.isNotEmpty
+                    ? item.bookingCode
+                    : 'Wallet entry'));
 
     return Container(
       width: double.infinity,
@@ -516,89 +724,57 @@ class _CreditHistoryTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppTheme.border),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  item.bookingCode.isNotEmpty
-                      ? item.bookingCode
-                      : 'Booking #${item.id}',
+          Icon(
+            isDebit ? Icons.arrow_outward : Icons.add_circle_outline,
+            size: 20,
+            color: isDebit ? AppTheme.brandDanger : AppTheme.brandSuccess,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     fontSize: 14,
-                    color: AppTheme.textPrimary,
                   ),
                 ),
-              ),
-              Text(
-                formatPaise(item.creditPaise),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  color: AppTheme.brandSuccess,
-                ),
-              ),
-            ],
+                if (item.utr != null && item.utr!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'UTR ${item.utr}',
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+                if (whenLabel.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    whenLabel,
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-          if (item.label != null && item.label!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              item.label!,
-              style: const TextStyle(color: AppTheme.textMuted, fontSize: 12.5),
+          Text(
+            '${isDebit && amount > 0 ? '-' : (amount > 0 ? '+' : '')}${formatPaise(amount.abs())}',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: isDebit ? AppTheme.brandDanger : AppTheme.brandSuccess,
             ),
-          ],
-          if (whenLabel.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              whenLabel,
-              style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
-            ),
-          ],
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              if (item.commissionWaived)
-                _chip('Free booking', AppTheme.brandSuccess)
-              else if (item.commissionPaise > 0)
-                _chip(
-                  'Fee ${formatPaise(item.commissionPaise)}',
-                  feeDue ? AppTheme.brandDanger : AppTheme.textMuted,
-                ),
-              if (item.platformFeePaid)
-                _chip(
-                  item.utr != null && item.utr!.isNotEmpty
-                      ? 'Paid · UTR ${item.utr}'
-                      : 'Platform fee paid',
-                  AppTheme.brandSuccess,
-                )
-              else if (feeDue)
-                _chip('UTR pending', AppTheme.brandDanger),
-            ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _chip(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w700,
-          fontSize: 11.5,
-        ),
       ),
     );
   }

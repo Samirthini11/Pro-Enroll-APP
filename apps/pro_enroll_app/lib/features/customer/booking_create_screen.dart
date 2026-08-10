@@ -15,6 +15,8 @@ import '../../data/api/api_exception.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
+import '../../state/categories_provider.dart';
+import '../../state/locale_state.dart';
 import '../shared/map_preview.dart';
 import '../shared/widgets.dart';
 import 'customer_booking_ui.dart';
@@ -418,7 +420,9 @@ class _BookingCreateScreenState extends ConsumerState<BookingCreateScreen> {
     final catCode = widget.params['category_code'] as String? ?? '';
     final proId = parseRouteInt(widget.params['pro_id']);
     final feePaise = parseRouteInt(widget.params['visit_fee_paise']);
-    final cat = supportedCategories.where((c) => c.code == catCode).firstOrNull;
+    final lang = ref.watch(localeProvider).languageCode;
+    final cat = ref.watch(categoriesListProvider).tryByCode(catCode) ??
+        supportedCategories.tryByCode(catCode);
     final hasGeo = _addressLat != null && _addressLng != null;
     final timeLabel = DateFormat('EEE, d MMM yyyy · h:mm a').format(_scheduledAt);
     final activeBooking = findActiveBookingWithPro(
@@ -488,7 +492,7 @@ class _BookingCreateScreenState extends ConsumerState<BookingCreateScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             Text(
-                              cat?.nameEn ?? catCode,
+                              cat?.name(lang) ?? catCode,
                               style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
                             ),
                           ],

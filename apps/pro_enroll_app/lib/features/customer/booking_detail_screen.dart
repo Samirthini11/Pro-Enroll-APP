@@ -7,9 +7,12 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants.dart';
 import '../../core/ist_time.dart';
 import '../../core/theme.dart';
+import '../../data/api/api_exception.dart';
 import '../../data/models.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
+import '../../state/categories_provider.dart';
+import '../../state/locale_state.dart';
 import '../shared/map_preview.dart';
 import '../shared/widgets.dart';
 import 'customer_booking_ui.dart';
@@ -47,7 +50,11 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   void _syncTrackingTimer() {
     _trackTimer?.cancel();
     final b = _booking;
-    if (b != null && b.isTrackable && mounted) {
+    // Poll while trackable, or while waiting for stuck-cancel unlock.
+    final needsPoll = b != null &&
+        mounted &&
+        (b.isTrackable || (b.status == 'en_route' && !b.canCancel));
+    if (needsPoll) {
       _trackTimer = Timer.periodic(const Duration(seconds: 20), (_) {
         _refreshTracking(silent: true);
       });
@@ -75,20 +82,6 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     }
   }
 
-  Future<void> _complete() async {
-    setState(() => _submitting = true);
-    try {
-      await ref.read(customerProvider.notifier).completeBooking(widget.bookingId);
-      await _load();
-      ref.read(customerProvider.notifier).loadBookings();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
-    if (mounted) setState(() => _submitting = false);
-  }
-
   Future<void> _payVisitFee() async {
     setState(() => _submitting = true);
     try {
@@ -100,7 +93,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         setState(() => _booking = b);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Visit fee paid · ${formatPaise(b.visitFeePaise)}'),
+            content: Text('Confirmed · Visit fee paid · ${formatPaise(b.visitFeePaise)}'),
             backgroundColor: AppTheme.brandSuccess,
           ),
         );
@@ -115,13 +108,16 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   }
 
   Future<void> _cancel() async {
+    final booking = _booking;
+    final isStuckCancel = booking?.status == 'en_route';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cancel booking?'),
-        content: const Text(
-          'You can cancel free before the technician is on the way. '
-          'No visit fee is charged at booking time.',
+        content: Text(
+          isStuckCancel
+              ? 'The technician has not moved for a while. Cancel so you can book another technician. No visit fee is charged.'
+              : 'You can cancel free before the technician starts heading your way. No visit fee is charged at booking time.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep booking')),
@@ -151,7 +147,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not cancel: $e')));
+        final msg = e is ApiException ? e.message : 'Could not cancel: $e';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       }
     }
     if (mounted) setState(() => _submitting = false);
@@ -193,7 +190,9 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       );
     }
 
-    final cat = supportedCategories.where((c) => c.code == b.categoryCode).firstOrNull;
+    final cat = ref.watch(categoriesListProvider).tryByCode(b.categoryCode) ??
+        supportedCategories.tryByCode(b.categoryCode);
+    final lang = ref.watch(localeProvider).languageCode;
     final title = b.bookingCode ?? 'Booking #${b.id}';
 
     return AppPage(
@@ -235,7 +234,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
-                                  b.categoryName ?? cat?.nameEn ?? b.categoryCode,
+                                  cat?.name(lang) ?? b.categoryName ?? b.categoryCode,
                                   style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
                                 ),
                               ],
@@ -298,9 +297,11 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _submitting ? null : _cancel,
                     icon: const Icon(Icons.cancel_outlined, color: AppTheme.brandDanger),
-                    label: const Text(
-                      'Cancel booking',
-                      style: TextStyle(color: AppTheme.brandDanger, fontWeight: FontWeight.w700),
+                    label: Text(
+                      b.status == 'en_route'
+                          ? 'Cancel & book another'
+                          : 'Cancel booking',
+                      style: const TextStyle(color: AppTheme.brandDanger, fontWeight: FontWeight.w700),
                     ),
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: AppTheme.brandDanger),
@@ -308,14 +309,52 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'You can cancel until the technician starts heading your way.',
-                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                Text(
+                  b.cancelHint ??
+                      (b.status == 'en_route'
+                          ? 'Technician has not moved. You can cancel and book another technician.'
+                          : 'You can cancel until the technician starts heading your way.'),
+                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                ),
+                if (b.cancelsRemainingToday != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${b.cancelsRemainingToday}/${b.dailyCancelLimit} cancels left today',
+                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                  ),
+                ],
+                const SizedBox(height: 16),
+              ] else if (b.cancelHint != null &&
+                  (b.status == 'en_route' ||
+                      (b.cancelsRemainingToday != null &&
+                          b.cancelsRemainingToday! <= 0))) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.brandAccentLight,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    border: Border.all(color: AppTheme.brandAccentBorder),
+                  ),
+                  child: Text(
+                    b.cancelHint!,
+                    style: const TextStyle(
+                      color: AppTheme.brandAccentText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
               ],
               if (b.canPayVisitFee) ...[
-                Text('Pay visit fee', style: Theme.of(context).textTheme.titleMedium),
+                Text('Confirm & pay visit fee', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                const Text(
+                  'Paying confirms the work is done and closes this booking.',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                ),
                 const SizedBox(height: 8),
                 _PayMethodTile(
                   value: 'upi',
@@ -347,18 +386,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                   child: FilledButton.icon(
                     onPressed: _submitting ? null : _payVisitFee,
                     icon: const Icon(Icons.payment),
-                    label: Text('Pay ${formatPaise(b.visitFeePaise)} visit fee'),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-              if (b.canComplete) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _submitting ? null : _complete,
-                    icon: const Icon(Icons.check_circle),
-                    label: const Text('Mark as Complete'),
+                    label: Text('Confirm & pay ${formatPaise(b.visitFeePaise)}'),
                   ),
                 ),
                 const SizedBox(height: 16),

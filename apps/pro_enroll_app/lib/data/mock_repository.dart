@@ -55,7 +55,7 @@ class MockRepository implements ProRepository {
     }
     return AuthSyncResult(
       nextRoute: role == AppRole.customer
-          ? '/customer/home'
+          ? '/customer/profile-setup'
           : (mode == 'sign_in' ? '/home' : '/onboard/category'),
       role: role,
     );
@@ -100,13 +100,15 @@ class MockRepository implements ProRepository {
   Future<void> saveCategories(
     List<String> categoryCodes, {
     Map<String, int>? experienceByCategory,
+    Map<String, int>? experienceStartYearByCategory,
   }) async =>
       _delay();
 
   @override
   Future<void> saveExperience({
     required String fullName,
-    required Map<String, int> experienceByCategory,
+    Map<String, int>? experienceByCategory,
+    Map<String, int>? experienceStartYearByCategory,
   }) async =>
       _delay();
 
@@ -120,7 +122,11 @@ class MockRepository implements ProRepository {
       _delay();
 
   @override
-  Future<void> saveVisitFeePaise(int visitFeePaise) async => _delay();
+  Future<void> saveVisitFeePaise(
+    int visitFeePaise, {
+    Map<String, int>? feesByCategoryPaise,
+  }) async =>
+      _delay();
 
   @override
   Future<void> uploadKycDocuments(List<String> documentTypes) async => _delay();
@@ -147,20 +153,22 @@ class MockRepository implements ProRepository {
   }
 
   @override
-  Future<ActiveJob> acceptOffer(String offerId) async {
+  Future<AcceptOfferResult> acceptOffer(String offerId) async {
     final offer = await fetchOffer(offerId);
     if (offer == null) throw StateError('offer not found');
-    return ActiveJob(
-      id: offer.id,
-      code: offer.code,
-      categoryCode: offer.categoryCode,
-      problem: offer.problem,
-      customerName: offer.customerName,
-      customerPhoneMasked: '+91 78xxx xx00',
-      customerAddress: offer.customerAreaName,
-      customerAreaName: offer.customerAreaName,
-      distanceKm: offer.distanceKm,
-      visitFeePaise: offer.visitFeePaise,
+    return AcceptOfferResult(
+      activeJob: ActiveJob(
+        id: offer.id,
+        code: offer.code,
+        categoryCode: offer.categoryCode,
+        problem: offer.problem,
+        customerName: offer.customerName,
+        customerPhoneMasked: '+91 78xxx xx00',
+        customerAddress: offer.customerAreaName,
+        customerAreaName: offer.customerAreaName,
+        distanceKm: offer.distanceKm,
+        visitFeePaise: offer.visitFeePaise,
+      ),
     );
   }
 
@@ -181,7 +189,28 @@ class MockRepository implements ProRepository {
   }
 
   @override
-  Future<void> updateAvailability(bool isAvailable) async => _delay();
+  Future<ActiveJob?> confirmPaymentReceived({String paymentMethod = 'cash'}) async {
+    await _delay();
+    return null;
+  }
+
+  @override
+  Future<void> cancelActiveJob({String? reason}) async => _delay();
+
+  @override
+  Future<ProProfile?> updateAvailability(bool isAvailable) async {
+    await _delay();
+    return null;
+  }
+
+  @override
+  Future<ProProfile?> requestExperienceEdit({String? reason}) async {
+    await _delay();
+    return ProProfile(
+      canEditExperience: false,
+      experienceEditRequestStatus: 'pending',
+    );
+  }
 
   @override
   Future<void> pingPresence() async => _delay();
@@ -215,6 +244,41 @@ class MockRepository implements ProRepository {
   }
 
   @override
+  Future<HomeJobsBundle> fetchHomeJobs(List<String> categoryCodes) async {
+    final offers = await fetchOffers(categoryCodes);
+    return HomeJobsBundle(
+      offers: offers,
+      history: [
+        ProJobHistoryItem(
+          id: '91',
+          code: 'PE-DEMO-91',
+          categoryCode: categoryCodes.isNotEmpty ? categoryCodes.first : 'ac',
+          problem: 'Demo completed repair',
+          customerName: 'Priya',
+          customerAreaName: 'White Town',
+          visitFeePaise: 15000,
+          status: 'completed',
+          statusLabel: 'Completed',
+          visitFeePaid: true,
+          completedAt: DateTime.now().subtract(const Duration(days: 1)),
+        ),
+        ProJobHistoryItem(
+          id: '90',
+          code: 'PE-DEMO-90',
+          categoryCode: categoryCodes.isNotEmpty ? categoryCodes.first : 'ac',
+          problem: 'Waiting for customer payment',
+          customerName: 'Ramesh',
+          customerAreaName: 'Lawspet',
+          visitFeePaise: 20000,
+          status: 'awaiting_payment',
+          statusLabel: 'Awaiting payment',
+          updatedAt: DateTime.now().subtract(const Duration(hours: 2)),
+        ),
+      ],
+    );
+  }
+
+  @override
   Future<EarningsSummary> fetchEarnings() async {
     await _delay();
     return EarningsSummary(
@@ -223,13 +287,20 @@ class MockRepository implements ProRepository {
       monthPaise: 1850000,
       payoutsThisMonthPaise: 1620000,
       pendingPayoutPaise: 230000,
-      walletBalancePaise: 230000,
+      walletBalancePaise: 15000,
       jobsToday: 3,
-      platformFeeDuePaise: 1000,
+      visitCommissionPercent: 10,
+      freeBookingLimit: 5,
+      freeBookingsRemaining: 2,
+      walletMinAcceptPaise: 5000,
+      walletRechargeMinPaise: 5000,
+      suggestedRechargePaise: 5000,
       companyUpiId: 'sami050699@okaxis',
       companyUpiName: 'Pro Enroll',
       companyUpiPayUri:
-          'upi://pay?pa=sami050699%40okaxis&pn=Pro%20Enroll&am=10.00&cu=INR&tn=Platform%20fee',
+          'upi://pay?pa=sami050699%40okaxis&pn=Pro%20Enroll&am=50.00&cu=INR&tn=Wallet%20recharge',
+      commissionNote:
+          'First 5 jobs free (2 left). After that keep min ₹50 in wallet; 10% of visit fee is deducted per job.',
     );
   }
 
@@ -245,10 +316,58 @@ class MockRepository implements ProRepository {
       pendingPayoutPaise: e.pendingPayoutPaise,
       walletBalancePaise: e.walletBalancePaise,
       jobsToday: e.jobsToday,
+      visitCommissionPercent: e.visitCommissionPercent,
       platformFeeDuePaise: 0,
       companyUpiId: e.companyUpiId,
       companyUpiName: e.companyUpiName,
-      companyUpiPayUri: e.companyUpiPayUri,
+    );
+  }
+
+  final List<WalletRechargeRequest> _rechargeRequests = [];
+
+  @override
+  Future<List<WalletRechargeRequest>> fetchRechargeRequests() async {
+    await _delay();
+    return List.unmodifiable(_rechargeRequests);
+  }
+
+  @override
+  Future<EarningsSummary> rechargeWallet({
+    required int amountPaise,
+    required String utr,
+  }) async {
+    await _delay();
+    final e = await fetchEarnings();
+    // Mirrors the API: balance is unchanged until an admin approves.
+    _rechargeRequests.insert(
+      0,
+      WalletRechargeRequest(
+        id: '${_rechargeRequests.length + 1}',
+        amountPaise: amountPaise,
+        utr: utr.toUpperCase(),
+        status: 'pending',
+        statusLabel: 'Waiting for admin approval',
+        createdAt: DateTime.now(),
+      ),
+    );
+    return EarningsSummary(
+      todayPaise: e.todayPaise,
+      weekPaise: e.weekPaise,
+      monthPaise: e.monthPaise,
+      payoutsThisMonthPaise: e.payoutsThisMonthPaise,
+      pendingPayoutPaise: e.pendingPayoutPaise,
+      walletBalancePaise: e.walletBalancePaise,
+      pendingRechargePaise: amountPaise,
+      jobsToday: e.jobsToday,
+      visitCommissionPercent: 10,
+      freeBookingLimit: 5,
+      freeBookingsRemaining: e.freeBookingsRemaining,
+      walletMinAcceptPaise: 5000,
+      walletRechargeMinPaise: 5000,
+      suggestedRechargePaise: 5000,
+      companyUpiId: e.companyUpiId,
+      companyUpiName: e.companyUpiName,
+      canAcceptJobs: true,
     );
   }
 
@@ -407,7 +526,8 @@ class MockRepository implements ProRepository {
   @override
   Future<CustomerProfile?> fetchCustomerProfile() async {
     await _delay();
-    return CustomerProfile(fullName: 'Demo Customer', phoneE164: '+919876543210', cityId: 1);
+    // Incomplete by default so "Need a Service" OTP shows name + location setup.
+    return CustomerProfile(phoneE164: '+919876543210');
   }
 
   @override

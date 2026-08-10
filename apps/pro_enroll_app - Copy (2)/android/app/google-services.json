@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1061331368492",
+    "project_id": "proenroll-4ff13",
+    "storage_bucket": "proenroll-4ff13.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1061331368492:android:a2e3e6e23b71191cafef89",
+        "android_client_info": {
+          "package_name": "pro.enroll"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDxcxKiT-6AjxDs-i3YBz--0qc8GI_xARA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

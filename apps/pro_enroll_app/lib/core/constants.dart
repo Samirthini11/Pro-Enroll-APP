@@ -68,7 +68,12 @@ class CategoryRef {
   int get basePricePaise => basePrice * 100;
   int get defaultVisitFeePaise => defaultVisitFee * 100;
 
-  String name(String lang) => lang == 'ta' ? nameTa : nameEn;
+  String name(String lang) {
+    if (lang != 'ta') return nameEn;
+    final ta = _usableTamilName(nameTa) ??
+        supportedCategories.tryByCode(code)?.nameTa;
+    return ta ?? nameEn;
+  }
 
   String priceLabel(String lang) => lang == 'ta'
       ? 'அடிப்படை ₹$basePrice'
@@ -83,14 +88,27 @@ class CategoryRef {
         (map['default_visit_fee_paise'] as num?)?.toInt() ?? 15000;
     final basePaise = (map['base_price_paise'] as num?)?.toInt() ?? visitPaise;
     final iconKey = map['icon_key'] as String? ?? 'build';
+    final code = map['code'] as String? ?? '';
+    final nameEn = map['name_en'] as String? ?? code;
+    final rawTa = (map['name_ta'] as String?)?.trim() ?? '';
+    final localTa = supportedCategories.tryByCode(code)?.nameTa;
     return CategoryRef(
-      code: map['code'] as String? ?? '',
-      nameEn: map['name_en'] as String? ?? map['code'] as String? ?? '',
-      nameTa: map['name_ta'] as String? ?? map['name_en'] as String? ?? '',
+      code: code,
+      nameEn: nameEn,
+      // Prefer local Tamil when API/DB text is corrupted (????) or missing.
+      nameTa: _usableTamilName(rawTa) ?? localTa ?? nameEn,
       icon: categoryIconForKey(iconKey),
       basePrice: clampVisitFeeRupees(basePaise ~/ 100),
       defaultVisitFee: clampVisitFeeRupees(visitPaise ~/ 100),
     );
+  }
+
+  /// True Tamil text (not empty, not `???…`, contains Tamil script).
+  static String? _usableTamilName(String value) {
+    final s = value.trim();
+    if (s.isEmpty || s.contains('?')) return null;
+    final hasTamil = s.runes.any((r) => r >= 0x0B80 && r <= 0x0BFF);
+    return hasTamil ? s : null;
   }
 }
 
@@ -110,7 +128,7 @@ const supportedCategories = <CategoryRef>[
   CategoryRef(
     code: 'ac',
     nameEn: 'AC Mechanic',
-    nameTa: 'AC மெக்கானிக்',
+    nameTa: 'ஏசி மெக்கானிக்',
     icon: Icons.ac_unit,
     basePrice: 200,
     defaultVisitFee: 200,
@@ -134,7 +152,7 @@ const supportedCategories = <CategoryRef>[
   CategoryRef(
     code: 'ro',
     nameEn: 'RO Water Service',
-    nameTa: 'RO வாட்டர் சர்வீஸ்',
+    nameTa: 'RO குடிநீர் சேவை',
     icon: Icons.water_drop,
     basePrice: 150,
     defaultVisitFee: 150,
@@ -142,7 +160,7 @@ const supportedCategories = <CategoryRef>[
   CategoryRef(
     code: 'fridge',
     nameEn: 'Fridge Repair',
-    nameTa: 'குளிர்சாதனம் ரிப்பேர்',
+    nameTa: 'குளிர்சாதனப் பழுதுபார்ப்பு',
     icon: Icons.kitchen,
     basePrice: 200,
     defaultVisitFee: 200,
@@ -150,7 +168,7 @@ const supportedCategories = <CategoryRef>[
   CategoryRef(
     code: 'wash',
     nameEn: 'Washing Machine',
-    nameTa: 'வாஷிங் மெஷின்',
+    nameTa: 'சலவை இயந்திரம்',
     icon: Icons.local_laundry_service,
     basePrice: 200,
     defaultVisitFee: 200,

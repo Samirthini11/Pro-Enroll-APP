@@ -6,6 +6,7 @@ import '../../core/constants.dart';
 import '../../routing/router.dart';
 import '../../state/app_state.dart';
 import '../../state/categories_provider.dart';
+import '../../state/locale_state.dart';
 import '../shared/widgets.dart';
 import 'customer_booking_ui.dart';
 
@@ -50,10 +51,11 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                     itemBuilder: (ctx, i) {
                       final b = state.bookings[i];
                       final cat = categories.tryByCode(b.categoryCode);
+                      final lang = ref.watch(localeProvider).languageCode;
                       return CustomerBookingListTile(
                         booking: b,
                         categoryIcon: cat?.icon,
-                        categoryName: cat?.nameEn,
+                        categoryName: cat?.name(lang),
                         onTap: () => context.push(Routes.customerBookingDetail, extra: b.id),
                       );
                     },

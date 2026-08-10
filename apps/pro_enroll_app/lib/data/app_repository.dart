@@ -178,11 +178,13 @@ class AppRepository implements ProRepository {
   Future<void> saveCategories(
     List<String> categoryCodes, {
     Map<String, int>? experienceByCategory,
+    Map<String, int>? experienceStartYearByCategory,
   }) =>
       _whenAuthedApi(
         api: () => _api.saveCategories(
           categoryCodes,
           experienceByCategory: experienceByCategory,
+          experienceStartYearByCategory: experienceStartYearByCategory,
         ),
         mock: () async {},
       );
@@ -190,12 +192,14 @@ class AppRepository implements ProRepository {
   @override
   Future<void> saveExperience({
     required String fullName,
-    required Map<String, int> experienceByCategory,
+    Map<String, int>? experienceByCategory,
+    Map<String, int>? experienceStartYearByCategory,
   }) =>
       _whenAuthedApi(
         api: () => _api.saveExperience(
           fullName: fullName,
           experienceByCategory: experienceByCategory,
+          experienceStartYearByCategory: experienceStartYearByCategory,
         ),
         mock: () async {},
       );
@@ -218,8 +222,15 @@ class AppRepository implements ProRepository {
       );
 
   @override
-  Future<void> saveVisitFeePaise(int visitFeePaise) => _whenAuthedApi(
-        api: () => _api.saveVisitFeePaise(visitFeePaise),
+  Future<void> saveVisitFeePaise(
+    int visitFeePaise, {
+    Map<String, int>? feesByCategoryPaise,
+  }) =>
+      _whenAuthedApi(
+        api: () => _api.saveVisitFeePaise(
+          visitFeePaise,
+          feesByCategoryPaise: feesByCategoryPaise,
+        ),
         mock: () async {},
       );
 
@@ -268,6 +279,13 @@ class AppRepository implements ProRepository {
       );
 
   @override
+  Future<HomeJobsBundle> fetchHomeJobs(List<String> categoryCodes) =>
+      _whenAuthedApi(
+        api: () => _api.fetchHomeJobs(categoryCodes),
+        mock: () => _mock.fetchHomeJobs(categoryCodes),
+      );
+
+  @override
   Future<ActiveJob?> fetchActiveJob() => _whenAuthedApi(
         api: _api.fetchActiveJob,
         mock: _mock.fetchActiveJob,
@@ -286,22 +304,24 @@ class AppRepository implements ProRepository {
       );
 
   @override
-  Future<ActiveJob> acceptOffer(String offerId) => _whenAuthedApi(
+  Future<AcceptOfferResult> acceptOffer(String offerId) => _whenAuthedApi(
         api: () => _api.acceptOffer(offerId),
         mock: () async {
           final offer = await fetchOffer(offerId);
           if (offer == null) throw StateError('offer not found');
-          return ActiveJob(
-            id: offer.id,
-            code: offer.code,
-            categoryCode: offer.categoryCode,
-            problem: offer.problem,
-            customerName: offer.customerName,
-            customerPhoneMasked: '+91 78xxx xx00',
-            customerAddress: offer.customerAreaName,
-            customerAreaName: offer.customerAreaName,
-            distanceKm: offer.distanceKm,
-            visitFeePaise: offer.visitFeePaise,
+          return AcceptOfferResult(
+            activeJob: ActiveJob(
+              id: offer.id,
+              code: offer.code,
+              categoryCode: offer.categoryCode,
+              problem: offer.problem,
+              customerName: offer.customerName,
+              customerPhoneMasked: '+91 78xxx xx00',
+              customerAddress: offer.customerAreaName,
+              customerAreaName: offer.customerAreaName,
+              distanceKm: offer.distanceKm,
+              visitFeePaise: offer.visitFeePaise,
+            ),
           );
         },
       );
@@ -335,6 +355,19 @@ class AppRepository implements ProRepository {
       );
 
   @override
+  Future<ActiveJob?> confirmPaymentReceived({String paymentMethod = 'cash'}) =>
+      _whenAuthedApi(
+        api: () => _api.confirmPaymentReceived(paymentMethod: paymentMethod),
+        mock: () => _mock.confirmPaymentReceived(paymentMethod: paymentMethod),
+      );
+
+  @override
+  Future<void> cancelActiveJob({String? reason}) => _whenAuthedApi(
+        api: () => _api.cancelActiveJob(reason: reason),
+        mock: () => _mock.cancelActiveJob(reason: reason),
+      );
+
+  @override
   Future<EarningsSummary> fetchEarnings() => _whenAuthedApi(
         api: _api.fetchEarnings,
         mock: _mock.fetchEarnings,
@@ -354,9 +387,34 @@ class AppRepository implements ProRepository {
       );
 
   @override
-  Future<void> updateAvailability(bool isAvailable) => _whenAuthedApi(
+  Future<EarningsSummary> rechargeWallet({
+    required int amountPaise,
+    required String utr,
+  }) =>
+      _whenAuthedApi(
+        api: () => _api.rechargeWallet(amountPaise: amountPaise, utr: utr),
+        mock: () =>
+            _mock.rechargeWallet(amountPaise: amountPaise, utr: utr),
+      );
+
+  @override
+  Future<List<WalletRechargeRequest>> fetchRechargeRequests() =>
+      _whenAuthedApi(
+        api: _api.fetchRechargeRequests,
+        mock: _mock.fetchRechargeRequests,
+      );
+
+  @override
+  Future<ProProfile?> requestExperienceEdit({String? reason}) =>
+      _whenAuthedApi(
+        api: () => _api.requestExperienceEdit(reason: reason),
+        mock: () => _mock.requestExperienceEdit(reason: reason),
+      );
+
+  @override
+  Future<ProProfile?> updateAvailability(bool isAvailable) => _whenAuthedApi(
         api: () => _api.updateAvailability(isAvailable),
-        mock: () async {},
+        mock: () => _mock.updateAvailability(isAvailable),
       );
 
   @override

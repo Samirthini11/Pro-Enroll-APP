@@ -9,8 +9,11 @@ import '../../core/i18n.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../data/app_repository.dart';
+import '../../data/models.dart';
 import '../../routing/router.dart';
+import '../../services/kyc_preview_service.dart';
 import '../../services/legal_acceptance_service.dart';
+import '../../services/push_notification_service.dart';
 import '../../state/categories_provider.dart';
 import '../../state/app_state.dart';
 
@@ -31,9 +34,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   Future<void> _boot() async {
     if (!mounted) return;
 
-    // Capture notification tap payload before any navigation.
+    // Capture notification tap ASAP; defer permission UI so it can't break
+    // cold-start routing on the first notification.
     if (AppConfig.hasApi) {
-      await ref.read(pushNotificationServiceProvider).init();
+      await ref.read(pushNotificationServiceProvider).init(
+            deferPermissionPrompt: true,
+          );
+      final preferred = PushNotificationService.pendingRequiredRole;
+      // Optimistic JWT restore so GoRouter never treats boot as logged-out.
+      await ref.read(authProvider.notifier).bootstrapSessionFromDisk(
+            preferredRole: preferred,
+          );
     }
 
     final accepted =
@@ -41,6 +52,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     if (!accepted) {
       if (mounted) context.go(Routes.termsAcceptance);
       return;
+    }
+
+    // Restore KYC preview unlock (continue-before-approval).
+    final preview = await KycPreviewService.isUnlocked();
+    if (mounted) {
+      ref.read(kycPreviewUnlockedProvider.notifier).state = preview;
     }
 
     // Warm API while splash shows — reduces first OTP / login timeout.
@@ -51,8 +68,18 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       }
     }
 
-    await Future<void>.delayed(const Duration(milliseconds: 900));
+    await Future<void>.delayed(const Duration(milliseconds: 700));
     await _navigateNext();
+  }
+
+  Future<void> _openAfterRestore() async {
+    if (!mounted) return;
+    final route = ref.read(authProvider.notifier).routeAfterSessionRestore();
+    final router = GoRouter.of(context);
+    await ref.read(authProvider.notifier).navigateRespectingPush(
+          router,
+          route,
+        );
   }
 
   Future<void> _navigateNext() async {
@@ -61,36 +88,100 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     try {
       if (AppConfig.hasApi) {
         ref.read(categoriesProvider);
-        final restored =
-            await ref.read(authProvider.notifier).tryRestoreSession();
+        await ref.read(pushNotificationServiceProvider).init(
+              deferPermissionPrompt: PushNotificationService.hasPending,
+            );
+        final preferredRole = PushNotificationService.pendingRequiredRole;
+        var restored = await ref
+            .read(authProvider.notifier)
+            .tryRestoreSession(preferredRole: preferredRole);
+
+        // Last resort: JWT still on disk after a soft failure — keep session.
+        if (!restored) {
+          final tokens = ref.read(jwtTokenServiceProvider);
+          for (final role in [
+            ?preferredRole,
+            ...AppRole.values,
+          ]) {
+            if (await tokens.hasTokenForRole(role)) {
+              restored = await ref
+                  .read(authProvider.notifier)
+                  .tryRestoreSession(preferredRole: role);
+              if (restored) break;
+            }
+          }
+        }
+
+        // Notification cold start: never drop to login while a JWT exists.
+        if (!restored && PushNotificationService.hasPending) {
+          restored = await ref
+              .read(authProvider.notifier)
+              .bootstrapSessionFromDisk(preferredRole: preferredRole);
+        }
+
         if (!mounted) return;
         if (restored) {
-          final route =
-              ref.read(authProvider.notifier).routeAfterSessionRestore();
-          await ref.read(authProvider.notifier).navigateRespectingPush(
-                GoRouter.of(context),
-                route,
-              );
+          await _openAfterRestore();
           return;
         }
       }
 
-      if (mounted) {
-        await ref.read(pushNotificationServiceProvider).init();
-        context.go(Routes.authLanding);
-        await ref
-            .read(pushNotificationServiceProvider)
-            .markReadyAndFlush(authenticated: false);
+      if (!mounted) return;
+      // Only go to login when there is truly no session token.
+      final tokens = ref.read(jwtTokenServiceProvider);
+      final hasJwt = await tokens.hasTokenAsync() ||
+          await tokens.hasTokenForRole(AppRole.professional) ||
+          await tokens.hasTokenForRole(AppRole.customer);
+      if (hasJwt) {
+        final restored = await ref
+            .read(authProvider.notifier)
+            .bootstrapSessionFromDisk(
+              preferredRole: PushNotificationService.pendingRequiredRole,
+            );
+        if (restored && mounted) {
+          await _openAfterRestore();
+          return;
+        }
       }
+
+      await ref.read(pushNotificationServiceProvider).init();
+      if (ref.read(authProvider).isAuthenticated) {
+        await _openAfterRestore();
+        return;
+      }
+      // Keep pending deep-link; do not clear it when sending to login.
+      context.go(Routes.authLanding);
+      await ref
+          .read(pushNotificationServiceProvider)
+          .markReadyAndFlush(authenticated: false);
     } catch (e) {
       debugPrint('Splash navigation error: $e');
-      if (mounted) {
-        await ref.read(pushNotificationServiceProvider).init();
-        context.go(Routes.authLanding);
-        await ref
-            .read(pushNotificationServiceProvider)
-            .markReadyAndFlush(authenticated: false);
+      if (!mounted) return;
+      final tokens = ref.read(jwtTokenServiceProvider);
+      final hasJwt = await tokens.hasTokenAsync() ||
+          await tokens.hasTokenForRole(AppRole.professional) ||
+          await tokens.hasTokenForRole(AppRole.customer);
+      if (hasJwt || ref.read(authProvider).isAuthenticated) {
+        final restored = await ref
+            .read(authProvider.notifier)
+            .bootstrapSessionFromDisk(
+              preferredRole: PushNotificationService.pendingRequiredRole,
+            );
+        if (restored && mounted) {
+          await _openAfterRestore();
+          return;
+        }
       }
+      if (!mounted) return;
+      await ref.read(pushNotificationServiceProvider).init();
+      if (ref.read(authProvider).isAuthenticated) {
+        await _openAfterRestore();
+        return;
+      }
+      context.go(Routes.authLanding);
+      await ref
+          .read(pushNotificationServiceProvider)
+          .markReadyAndFlush(authenticated: false);
     }
   }
 

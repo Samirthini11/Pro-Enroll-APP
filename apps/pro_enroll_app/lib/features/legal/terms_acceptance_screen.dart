@@ -8,6 +8,7 @@ import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../routing/router.dart';
 import '../../services/legal_acceptance_service.dart';
+import '../../services/push_notification_service.dart';
 import '../../state/app_state.dart';
 import '../../state/categories_provider.dart';
 import '../../state/locale_state.dart';
@@ -37,13 +38,26 @@ class _TermsAcceptanceScreenState extends ConsumerState<TermsAcceptanceScreen> {
 
     if (AppConfig.hasApi) {
       ref.read(categoriesProvider);
-      final restored =
-          await ref.read(authProvider.notifier).tryRestoreSession();
+      final preferred = PushNotificationService.pendingRequiredRole;
+      await ref.read(pushNotificationServiceProvider).init(
+            deferPermissionPrompt: true,
+          );
+      var restored = await ref
+          .read(authProvider.notifier)
+          .tryRestoreSession(preferredRole: preferred);
+      if (!restored) {
+        restored = await ref
+            .read(authProvider.notifier)
+            .bootstrapSessionFromDisk(preferredRole: preferred);
+      }
       if (!mounted) return;
       if (restored) {
         final route =
             ref.read(authProvider.notifier).routeAfterSessionRestore();
-        context.go(route);
+        await ref.read(authProvider.notifier).navigateRespectingPush(
+              GoRouter.of(context),
+              route,
+            );
         return;
       }
     }

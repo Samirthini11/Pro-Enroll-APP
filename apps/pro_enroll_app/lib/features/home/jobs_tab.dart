@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
 import '../../core/i18n.dart';
+import '../../core/ist_time.dart';
 import '../../core/responsive.dart';
 import '../../core/theme.dart';
 import '../../data/api/api_exception.dart';
@@ -22,18 +25,54 @@ class JobsTab extends ConsumerStatefulWidget {
 }
 
 class _JobsTabState extends ConsumerState<JobsTab> {
+  bool _togglingAvailability = false;
+
   @override
   void initState() {
     super.initState();
     Future.microtask(_refresh);
   }
 
-  Future<void> _refresh() async {
+  Future<void> _refresh({bool silentJobs = false}) async {
+    await ref.read(profileProvider.notifier).loadFromApi();
     final profile = ref.read(profileProvider);
     if (profile.isAvailable) {
-      await ref
-          .read(jobsProvider.notifier)
-          .refresh(profile.skills.map((s) => s.categoryCode).toList());
+      await ref.read(jobsProvider.notifier).refresh(
+            profile.skills.map((s) => s.categoryCode).toList(),
+            silent: silentJobs,
+          );
+    }
+  }
+
+  Future<void> _onAvailabilityChanged(bool online) async {
+    if (_togglingAvailability) return;
+    setState(() => _togglingAvailability = true);
+    try {
+      await ref.read(profileProvider.notifier).setAvailability(online);
+      if (!mounted) return;
+      if (online) {
+        final profile = ref.read(profileProvider);
+        // Soft refresh — keep list mounted so the switch doesn't jump the page.
+        unawaited(
+          ref.read(jobsProvider.notifier).refresh(
+                profile.skills.map((s) => s.categoryCode).toList(),
+                silent: true,
+              ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is ApiException
+                ? e.message
+                : 'Could not update availability.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _togglingAvailability = false);
     }
   }
 
@@ -63,24 +102,8 @@ class _JobsTabState extends ConsumerState<JobsTab> {
               label: l.t('jobs.available_toggle'),
               onLabel: l.t('common.online'),
               offLabel: l.t('common.offline'),
-              enabled: !profile.listingHeld,
-              onChanged: (v) async {
-                try {
-                  await ref.read(profileProvider.notifier).setAvailability(v);
-                  if (v) _refresh();
-                } catch (e) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        e is ApiException
-                            ? e.message
-                            : 'Could not update availability.',
-                      ),
-                    ),
-                  );
-                }
-              },
+              enabled: !profile.listingHeld && !_togglingAvailability,
+              onChanged: _onAvailabilityChanged,
             ),
             if (profile.listingHeld) ...[
               const SizedBox(height: 12),
@@ -88,7 +111,7 @@ class _JobsTabState extends ConsumerState<JobsTab> {
                 tone: TrustBannerTone.warning,
                 icon: Icons.pause_circle_filled,
                 text:
-                    'Listing on hold — free bookings used up. Customers cannot see you until support unlocks your account.',
+                    'Listing paused — wallet is below ₹50. Recharge and wait for admin approval; it unlocks automatically after approval.',
               ),
             ],
             const SizedBox(height: 20),
@@ -132,6 +155,20 @@ class _JobsTabState extends ConsumerState<JobsTab> {
               for (final o in jobs.offers) ...[
                 _OfferCard(offer: o, lang: lang),
                 const SizedBox(height: 12),
+              ],
+            const SizedBox(height: 24),
+            Text('Job history', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            if (jobs.history.isEmpty && !jobs.loading)
+              const EmptyState(
+                icon: Icons.history,
+                title: 'No jobs yet',
+                body: 'Accepted and completed jobs will show here with status.',
+              )
+            else
+              for (final h in jobs.history) ...[
+                _HistoryCard(item: h),
+                const SizedBox(height: 10),
               ],
           ],
         ),
@@ -192,7 +229,8 @@ class _Header extends ConsumerWidget {
                 name: profile.fullName,
                 radius: 24,
                 backgroundColor: Colors.white,
-                onTap: () => switchToCustomerMode(context, ref),
+                onTap: () =>
+                    ref.read(homeShellTabProvider.notifier).state = 3,
               ),
             ],
           ),
@@ -262,30 +300,15 @@ class _AvailabilityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        gradient: available
-            ? const LinearGradient(
-                colors: [AppTheme.brandPrimary, AppTheme.brandPrimaryDark],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : null,
-        color: available ? null : Colors.white,
+        color: available ? AppTheme.brandPrimary : Colors.white,
         border: Border.all(
-          color: available ? Colors.transparent : AppTheme.border,
+          color: available ? AppTheme.brandPrimaryDark : AppTheme.border,
         ),
-        boxShadow: available
-            ? [
-                BoxShadow(
-                  color: AppTheme.brandPrimary.withValues(alpha: 0.25),
-                  blurRadius: 18,
-                  offset: const Offset(0, 10),
-                ),
-              ]
-            : null,
       ),
       child: Row(
         children: [
@@ -333,7 +356,9 @@ class _AvailabilityCard extends StatelessWidget {
             value: available,
             onChanged: enabled ? onChanged : null,
             activeThumbColor: Colors.white,
-            activeTrackColor: Colors.white.withValues(alpha: 0.35),
+            activeTrackColor: Colors.white.withValues(alpha: 0.4),
+            inactiveThumbColor: Colors.white,
+            inactiveTrackColor: AppTheme.border,
           ),
         ],
       ),
@@ -349,6 +374,11 @@ class _OfferCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l = ref.watch(lProvider);
+    final active = ref.watch(jobsProvider).activeJob;
+    final busy = active != null &&
+        active.status != BookingStatus.completed &&
+        active.status != BookingStatus.cancelled;
+    final expired = !offer.expiresAt.isAfter(DateTime.now().toUtc());
     final cat = supportedCategories.firstWhere(
       (c) => c.code == offer.categoryCode,
       orElse: () => supportedCategories.first,
@@ -425,8 +455,8 @@ class _OfferCard extends ConsumerWidget {
                 const SizedBox(height: 6),
                 Text(
                   offer.commissionPreview!.isFreeBooking
-                      ? 'Credit ${formatPaise(offer.commissionPreview!.proCreditPaise)} · free (${offer.commissionPreview!.freeBookingsRemaining} left)'
-                      : 'You get ${formatPaise(offer.commissionPreview!.proCreditPaise)} after ${offer.commissionPreview!.visitCommissionPercent}% fee',
+                      ? 'Free job · no wallet cut (${offer.commissionPreview!.freeBookingsRemaining} left)'
+                      : 'Visit ${formatPaise(offer.commissionPreview!.proCreditPaise)} · wallet −${formatPaise(offer.commissionPreview!.commissionPaise)} (${offer.commissionPreview!.visitCommissionPercent}%)',
                   style: TextStyle(
                     color: offer.commissionPreview!.isFreeBooking
                         ? AppTheme.brandSuccess
@@ -437,35 +467,70 @@ class _OfferCard extends ConsumerWidget {
                 ),
               ],
               const SizedBox(height: 14),
+              if (busy) ...[
+                Text(
+                  l.t('offer.finish_before_accept'),
+                  style: const TextStyle(
+                    color: AppTheme.brandWarning,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               LayoutBuilder(builder: (ctx, bc) {
                 final tight = bc.maxWidth < 280;
                 final reject = OutlinedButton(
-                  onPressed: () =>
-                      ref.read(jobsProvider.notifier).reject(offer),
+                  onPressed: expired
+                      ? null
+                      : () => ref.read(jobsProvider.notifier).reject(offer),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(44),
                   ),
                   child: Text(l.t('offer.reject')),
                 );
                 final accept = FilledButton(
-                  onPressed: () async {
-                    try {
-                      await ref.read(jobsProvider.notifier).accept(offer);
-                      if (context.mounted) context.push(Routes.activeJob);
-                    } catch (e) {
-                      if (!context.mounted) return;
-                      final msg = e is ApiException
-                          ? e.message
-                          : 'Could not accept offer';
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(msg)),
-                      );
-                    }
-                  },
+                  onPressed: expired
+                      ? () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(l.t('offer.expired'))),
+                          );
+                        }
+                      : busy
+                          ? () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content:
+                                      Text(l.t('offer.finish_before_accept')),
+                                ),
+                              );
+                            }
+                          : () async {
+                              try {
+                                await ref
+                                    .read(jobsProvider.notifier)
+                                    .accept(offer);
+                                if (context.mounted) {
+                                  context.push(Routes.activeJob);
+                                }
+                              } catch (e) {
+                                if (!context.mounted) return;
+                                final msg = e is ApiException
+                                    ? e.message
+                                    : 'Could not accept offer';
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(msg)),
+                                );
+                              }
+                            },
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(44),
+                    backgroundColor:
+                        expired || busy ? AppTheme.textFaint : null,
                   ),
-                  child: Text(l.t('offer.accept')),
+                  child: Text(
+                    expired ? l.t('offer.expired_short') : l.t('offer.accept'),
+                  ),
                 );
                 if (tight) {
                   return Column(
@@ -568,6 +633,138 @@ class _ActiveJobCard extends ConsumerWidget {
                   const SizedBox(width: 2),
                   Text('${job.distanceKm.toStringAsFixed(1)} km',
                       style: const TextStyle(color: Colors.white70)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+class _HistoryCard extends StatelessWidget {
+  const _HistoryCard({required this.item});
+  final ProJobHistoryItem item;
+
+  Color get _statusColor {
+    return switch (item.status) {
+      'completed' => AppTheme.brandSuccess,
+      'cancelled' => AppTheme.brandDanger,
+      'awaiting_payment' => AppTheme.brandAccentDark,
+      'in_progress' || 'arrived' || 'en_route' => AppTheme.brandPrimary,
+      'confirmed' => AppTheme.brandAccent,
+      _ => AppTheme.textMuted,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final when = item.displayAt;
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        onTap: () => context.push(Routes.jobHistoryDetail, extra: item.id),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+            border: Border.all(color: AppTheme.border),
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.code.isNotEmpty ? item.code : 'Job #${item.id}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textMuted,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                  StatusPill(label: item.statusLabel, color: _statusColor),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                item.problem,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700, height: 1.3),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.person_outline,
+                      size: 16, color: AppTheme.textMuted),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      item.customerName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppTheme.textMuted),
+                    ),
+                  ),
+                  Text(
+                    formatPaise(item.visitFeePaise),
+                    style: const TextStyle(
+                      color: AppTheme.brandPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              if (item.customerAreaName.trim().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined,
+                        size: 15, color: AppTheme.textMuted),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        item.customerAreaName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      when != null
+                          ? IstTime.format(when, pattern: 'd MMM, h:mm a')
+                          : '',
+                      style: const TextStyle(
+                        color: AppTheme.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    'View details',
+                    style: TextStyle(
+                      color: AppTheme.brandPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right,
+                      size: 18, color: AppTheme.brandPrimary),
                 ],
               ),
             ],

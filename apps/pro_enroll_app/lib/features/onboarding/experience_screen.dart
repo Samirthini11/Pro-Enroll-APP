@@ -22,16 +22,18 @@ class ExperienceScreen extends ConsumerStatefulWidget {
 
 class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
   late TextEditingController _nameCtrl;
-  late Map<String, int> _years;
+  /// Service start calendar year per category.
+  late Map<String, int> _startYears;
+  final int _currentYear = DateTime.now().year;
 
   @override
   void initState() {
     super.initState();
-    _nameCtrl = TextEditingController(
-        text: ref.read(profileProvider).fullName ?? '');
-    _years = {
-      for (final s in ref.read(profileProvider).skills)
-        s.categoryCode: s.experienceYears,
+    final profile = ref.read(profileProvider);
+    _nameCtrl = TextEditingController(text: profile.fullName ?? '');
+    _startYears = {
+      for (final s in profile.skills)
+        s.categoryCode: s.effectiveStartYear.clamp(_currentYear - 50, _currentYear),
     };
   }
 
@@ -39,6 +41,11 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
   void dispose() {
     _nameCtrl.dispose();
     super.dispose();
+  }
+
+  int _yearsFor(String code) {
+    final start = _startYears[code] ?? _currentYear;
+    return (_currentYear - start).clamp(0, 50);
   }
 
   Future<void> _continue() async {
@@ -50,17 +57,21 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
       for (final s in profile.skills)
         ProSkill(
           categoryCode: s.categoryCode,
-          experienceYears: _years[s.categoryCode] ?? 1,
+          experienceStartYear: _startYears[s.categoryCode] ?? _currentYear,
+          experienceYears: _yearsFor(s.categoryCode),
           isPrimary: s.isPrimary,
+          visitFeePaise: s.visitFeePaise,
         ),
     ]);
     try {
       await pn.persistExperience(
         fullName: name,
-        yearsByCategory: Map<String, int>.from(_years),
+        startYearByCategory: Map<String, int>.from(_startYears),
       );
     } catch (e) {
-      if (mounted) showApiError(context, e, fallback: 'Could not save experience.');
+      if (mounted) {
+        showApiError(context, e, fallback: 'Could not save experience.');
+      }
       return;
     }
     if (!mounted) return;
@@ -91,9 +102,9 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
             ),
           ),
           const SizedBox(height: 22),
-          const Text(
-            'Years of experience per skill',
-            style: TextStyle(
+          Text(
+            l.t('onboarding.experience.start_year_label'),
+            style: const TextStyle(
               color: AppTheme.textSecondary,
               fontWeight: FontWeight.w700,
               fontSize: 13,
@@ -102,12 +113,17 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
           ),
           const SizedBox(height: 10),
           for (final s in profile.skills) ...[
-            _SkillRow(
+            _SkillStartYearRow(
               icon: lookupCategory(categories, s.categoryCode).icon,
               label: lookupCategory(categories, s.categoryCode).name(lang),
-              years: _years[s.categoryCode] ?? 1,
-              onChange: (v) =>
-                  setState(() => _years[s.categoryCode] = v.clamp(0, 50)),
+              startYear: _startYears[s.categoryCode] ?? _currentYear,
+              years: _yearsFor(s.categoryCode),
+              minYear: _currentYear - 50,
+              maxYear: _currentYear,
+              onChange: (y) => setState(
+                () => _startYears[s.categoryCode] =
+                    y.clamp(_currentYear - 50, _currentYear),
+              ),
             ),
             const SizedBox(height: 10),
           ],
@@ -121,17 +137,23 @@ class _ExperienceScreenState extends ConsumerState<ExperienceScreen> {
   }
 }
 
-class _SkillRow extends StatelessWidget {
-  const _SkillRow({
+class _SkillStartYearRow extends StatelessWidget {
+  const _SkillStartYearRow({
     required this.icon,
     required this.label,
+    required this.startYear,
     required this.years,
+    required this.minYear,
+    required this.maxYear,
     required this.onChange,
   });
 
   final IconData icon;
   final String label;
+  final int startYear;
   final int years;
+  final int minYear;
+  final int maxYear;
   final ValueChanged<int> onChange;
 
   @override
@@ -158,13 +180,15 @@ class _SkillRow extends StatelessWidget {
                   Text(
                     label,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 14.5),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14.5,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '$years ${years == 1 ? 'year' : 'years'} experience',
+                    'Since $startYear · $years ${years == 1 ? 'year' : 'years'}',
                     style: const TextStyle(
                       color: AppTheme.textMuted,
                       fontSize: 12.5,
@@ -173,8 +197,10 @@ class _SkillRow extends StatelessWidget {
                 ],
               ),
             ),
-            _Stepper(
-              value: years,
+            _YearStepper(
+              value: startYear,
+              min: minYear,
+              max: maxYear,
               onChange: onChange,
             ),
           ],
@@ -184,10 +210,17 @@ class _SkillRow extends StatelessWidget {
   }
 }
 
-class _Stepper extends StatelessWidget {
-  const _Stepper({required this.value, required this.onChange});
+class _YearStepper extends StatelessWidget {
+  const _YearStepper({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChange,
+  });
 
   final int value;
+  final int min;
+  final int max;
   final ValueChanged<int> onChange;
 
   @override
@@ -205,12 +238,13 @@ class _Stepper extends StatelessWidget {
             iconSize: 18,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             padding: EdgeInsets.zero,
-            onPressed: value <= 0 ? null : () => onChange(value - 1),
+            // Older start year = more experience
+            onPressed: value <= min ? null : () => onChange(value - 1),
             icon: const Icon(Icons.remove),
             color: AppTheme.textSecondary,
           ),
           SizedBox(
-            width: 24,
+            width: 44,
             child: Text(
               '$value',
               textAlign: TextAlign.center,
@@ -224,7 +258,7 @@ class _Stepper extends StatelessWidget {
             iconSize: 18,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             padding: EdgeInsets.zero,
-            onPressed: value >= 50 ? null : () => onChange(value + 1),
+            onPressed: value >= max ? null : () => onChange(value + 1),
             icon: const Icon(Icons.add),
             color: AppTheme.brandPrimary,
           ),

@@ -1,0 +1,56 @@
+name: pro_enroll_app
+description: "Pro-Enroll: Self-enrollment app for verified blue-collar professionals (AC mechanics, plumbers, RO technicians, etc.)"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management + DI.
+  flutter_riverpod: ^2.5.1
+
+  # Routing.
+  go_router: ^14.2.7
+
+  # Local persistence (lightweight, no codegen for MVP scaffold).
+  shared_preferences: ^2.3.2
+
+  # i18n helpers.
+  intl: any
+
+  # Misc UI helpers.
+  flutter_svg: ^2.0.10+1
+
+  # PHP API (`pro_enroll_api`) — JWT + mail OTP.
+  http: ^1.2.2
+
+  # AES for InfinityFree JS challenge cookie solver.
+  encrypt: ^5.0.3
+
+  # Interactive OSM map (no API key needed).
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  geolocator: ^14.0.2
+  firebase_core: ^4.9.0
+  firebase_auth: ^6.5.1
+  url_launcher: ^6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  generate: true
+
+  assets:
+    - assets/branding/app_icon_1024.png

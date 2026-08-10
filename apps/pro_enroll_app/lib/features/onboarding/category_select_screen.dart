@@ -40,11 +40,17 @@ class _CategorySelectScreenState extends ConsumerState<CategorySelectScreen> {
   Future<void> _continue() async {
     final codes = _selected.toList();
     final skills = codes
-        .map((code) => ProSkill(
-              categoryCode: code,
-              experienceYears: 1,
-              isPrimary: codes.first == code,
-            ))
+        .map((code) {
+          final cats = ref.read(categoriesListProvider);
+          final cat = cats.tryByCode(code);
+          return ProSkill(
+            categoryCode: code,
+            experienceYears: 0,
+            experienceStartYear: DateTime.now().year,
+            isPrimary: codes.first == code,
+            visitFeePaise: (cat?.defaultVisitFee ?? 150) * 100,
+          );
+        })
         .toList();
     ref.read(profileProvider.notifier).setSkills(skills);
     try {

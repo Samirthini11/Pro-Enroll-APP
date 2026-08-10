@@ -10,6 +10,12 @@ class CustomerRouteResolver {
     CustomerProfile? profile,
     String? serverNextRoute,
   }) {
+    // Name + city are required before home — never skip setup when incomplete,
+    // even if a stale next_route says /customer/home.
+    if (!(profile?.isProfileComplete ?? false)) {
+      return Routes.customerProfileSetup;
+    }
+
     if (AppConfig.hasApi &&
         serverNextRoute != null &&
         serverNextRoute.isNotEmpty) {
@@ -17,10 +23,7 @@ class CustomerRouteResolver {
       if (mapped != null) return mapped;
     }
 
-    if (profile?.isProfileComplete ?? false) {
-      return Routes.customerHome;
-    }
-    return Routes.customerProfileSetup;
+    return Routes.customerHome;
   }
 
   static String? _fromServerRoute(String route) {
